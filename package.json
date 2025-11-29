@@ -1,0 +1,33 @@
+{
+  "name": "osia-uin-generator",
+  "version": "2.0.0",
+  "description": "OSIA-compliant UIN Generator with PostgreSQL persistence, foundational UINs, sector tokens, and lifecycle management",
+  "type": "module",
+  "main": "src/uinGenerator.mjs",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node src/test.mjs",
+    "test:db": "node src/testDb.mjs",
+    "start": "node src/server.mjs",
+    "cli": "node src/cli.mjs",
+    "migrate": "node src/migrate.mjs"
+  },
+  "keywords": [
+    "uin",
+    "osia",
+    "identity",
+    "tokenization",
+    "cryptography",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "knex": "^3.1.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {}
+}
