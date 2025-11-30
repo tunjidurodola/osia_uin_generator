@@ -883,6 +883,40 @@ pm2 start ecosystem.config.cjs`}</pre>
 }`}</pre>
               </div>
 
+              <h2>Information Endpoints</h2>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method get">GET</span>
+                  <code>/health</code>
+                </div>
+                <p>Health check with HSM, Vault, and database status.</p>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method get">GET</span>
+                  <code>/crypto/status</code>
+                </div>
+                <p>Cryptographic services status (HSM, Vault, secrets).</p>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method get">GET</span>
+                  <code>/modes</code>
+                </div>
+                <p>List available generation modes.</p>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method get">GET</span>
+                  <code>/sectors</code>
+                </div>
+                <p>List supported sectors for tokenization.</p>
+              </div>
+
               <h2>Pool Management Endpoints</h2>
 
               <div className="endpoint-card">
@@ -904,6 +938,80 @@ pm2 start ecosystem.config.cjs`}</pre>
   }
 }`}</pre>
               </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method get">GET</span>
+                  <code>/pool/peek</code>
+                </div>
+                <p>Preview top available UINs without claiming them.</p>
+                <pre className="code-block">{`// Request: GET /pool/peek?status=AVAILABLE&limit=1
+// Response
+{
+  "success": true,
+  "uins": [
+    { "uin": "ABC123...", "scope": "foundational", "status": "AVAILABLE", "provenance": {...} }
+  ]
+}`}</pre>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method post">POST</span>
+                  <code>/pool/preassign</code>
+                </div>
+                <p>Pre-assign a UIN from the pool (UI-friendly). Changes status: AVAILABLE → PREASSIGNED.</p>
+                <pre className="code-block">{`// Request
+{ "scope": "foundational" }
+
+// Response
+{
+  "success": true,
+  "uin": "ABCD1234EFGH5678XYZ",
+  "status": "PREASSIGNED",
+  "message": "UIN pre-assigned successfully"
+}`}</pre>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method post">POST</span>
+                  <code>/pool/assign</code>
+                </div>
+                <p>Assign a pre-assigned UIN to an entity (UI-friendly). Changes status: PREASSIGNED → ASSIGNED.</p>
+                <pre className="code-block">{`// Request
+{ "uin": "ABCD1234...", "entityId": "person-123" }
+
+// Response
+{
+  "success": true,
+  "uin": "ABCD1234...",
+  "status": "ASSIGNED",
+  "entityId": "person-123"
+}`}</pre>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method post">POST</span>
+                  <code>/pool/revoke</code>
+                </div>
+                <p>Revoke an assigned UIN (fraud, error correction). Changes status: → REVOKED.</p>
+                <pre className="code-block">{`// Request
+{ "uin": "ABCD1234...", "reason": "Fraud detected" }`}</pre>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method post">POST</span>
+                  <code>/pool/retire</code>
+                </div>
+                <p>Retire a UIN (end-of-life, death registration). Changes status: → RETIRED.</p>
+                <pre className="code-block">{`// Request
+{ "uin": "ABCD1234...", "reason": "Death registration" }`}</pre>
+              </div>
+
+              <h2>UIN Lifecycle Endpoints</h2>
 
               <div className="endpoint-card">
                 <div className="endpoint-header">
@@ -957,38 +1065,26 @@ pm2 start ecosystem.config.cjs`}</pre>
 
               <div className="endpoint-card">
                 <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/pool/peek</code>
+                  <span className="method post">POST</span>
+                  <code>/uin/release</code>
                 </div>
-                <p>Preview top available UINs without claiming them.</p>
-                <pre className="code-block">{`// Request: GET /pool/peek?status=AVAILABLE&limit=10
-// Response
-{
-  "success": true,
-  "uins": [
-    { "uin": "ABC123...", "scope": "foundational", "iat": "...", "meta": { "provenance": {...} } }
-  ]
-}`}</pre>
+                <p>Release a pre-assigned UIN back to pool (PREASSIGNED → AVAILABLE).</p>
               </div>
 
               <div className="endpoint-card">
                 <div className="endpoint-header">
                   <span className="method post">POST</span>
-                  <code>/pool/revoke</code>
+                  <code>/uin/status</code>
                 </div>
-                <p>Revoke an assigned UIN (fraud, error correction).</p>
-                <pre className="code-block">{`// Request
-{ "uin": "ABCD1234...", "reason": "Fraud detected" }`}</pre>
+                <p>Update UIN status (retire, revoke, etc.).</p>
               </div>
 
               <div className="endpoint-card">
                 <div className="endpoint-header">
                   <span className="method post">POST</span>
-                  <code>/pool/retire</code>
+                  <code>/uin/cleanup-preassigned</code>
                 </div>
-                <p>Retire a UIN (end-of-life, death registration).</p>
-                <pre className="code-block">{`// Request
-{ "uin": "ABCD1234...", "reason": "Death registration" }`}</pre>
+                <p>Release stale pre-assigned UINs back to available.</p>
               </div>
 
               <div className="endpoint-card">

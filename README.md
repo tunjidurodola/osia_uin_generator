@@ -32,16 +32,18 @@ A production-grade, PostgreSQL-backed **Unique Identification Number (UIN)** gen
 
 ## Features
 
-- **OSIA-Based Design** - Implements `POST /v1/uin` endpoint pattern
+- **OSIA-Based Design** - Implements `POST /v1/uin` endpoint pattern (OSIA v1.2.0)
 - **Four Generation Modes** - Foundational, Random, Structured, and Sector Token
 - **PostgreSQL Pool Management** - Pre-generation, claiming, and assignment workflows
 - **HSM Integration** - Hardware TRNG priority with PKCS#11 support
 - **HashiCorp Vault** - Centralized secret management with AppRole authentication
 - **Cryptographic Security** - Hardware TRNG, HMAC-SHA256, RIPEMD-160 hashing
+- **Entropy Provenance Tracking** - Identify UIN entropy source (HSM TRNG vs software CSPRNG)
 - **Complete Audit Trail** - Immutable logging of all UIN lifecycle events
 - **Sector Tokenization** - Unlinkable, sector-specific derived identifiers
-- **RFC 7519 JWT Support** - Token-based UIN representation
+- **Multi-Format Output** - JSON, JWT (RFC 7519), and JSON-LD (W3C Linked Data)
 - **React Web UI** - Professional interface for UIN management and documentation
+- **Pool Lifecycle Testing** - UI for fetch, pre-assign, assign, revoke, retire operations
 - **Terraform IaC** - Multi-host deployment with GitHub Actions CI/CD
 
 ### Supported Sectors
@@ -349,11 +351,21 @@ GET /crypto/status
 
 ## API Reference
 
-### Primary Endpoint
+### Information Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | API information and available endpoints |
+| `GET` | `/health` | Health check with HSM/Vault status |
+| `GET` | `/crypto/status` | Cryptographic services status |
+| `GET` | `/modes` | List available generation modes |
+| `GET` | `/sectors` | List supported sectors |
+
+### OSIA-Compliant Endpoint
 
 #### `POST /v1/uin`
 
-Generate a new UIN following the OSIA endpoint pattern.
+Generate a new UIN following the OSIA v1.2.0 endpoint pattern.
 
 **Query Parameters:**
 
@@ -367,25 +379,59 @@ Generate a new UIN following the OSIA endpoint pattern.
 "ABCD1234EFGH5678XYZ"
 ```
 
+### Stateless Generation Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/generate` | Generate UIN without database persistence |
+| `POST` | `/validate` | Validate a UIN (checksum, format) |
+| `POST` | `/batch` | Generate multiple UINs in one request |
+
 ### Pool Management Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/pool/stats` | Get pool statistics by scope |
-| `POST` | `/uin/pre-generate` | Batch pre-generate UINs |
-| `POST` | `/uin/claim` | Claim available UIN |
-| `POST` | `/uin/assign` | Assign UIN to entity |
-| `POST` | `/uin/release` | Release UIN back to pool |
-| `POST` | `/uin/status` | Update UIN status |
-| `GET` | `/uin/:uin` | Lookup UIN details |
-| `GET` | `/uin/:uin/audit` | Get audit trail |
+| `GET` | `/pool/peek` | Preview top available UINs without claiming |
+| `POST` | `/pool/preassign` | Pre-assign a UIN (UI-friendly, AVAILABLE → PREASSIGNED) |
+| `POST` | `/pool/assign` | Assign a pre-assigned UIN (UI-friendly, PREASSIGNED → ASSIGNED) |
+| `POST` | `/pool/revoke` | Revoke a UIN (UI-friendly, → REVOKED) |
+| `POST` | `/pool/retire` | Retire a UIN (UI-friendly, → RETIRED) |
 
-### Security Endpoints
+### UIN Lifecycle Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/crypto/status` | Cryptographic services status |
-| `GET` | `/health` | Health check with HSM/Vault status |
+| `POST` | `/uin/pre-generate` | Batch pre-generate UINs into pool |
+| `POST` | `/uin/claim` | Claim available UIN (AVAILABLE → PREASSIGNED) |
+| `POST` | `/uin/assign` | Assign UIN to entity (PREASSIGNED → ASSIGNED) |
+| `POST` | `/uin/release` | Release UIN back to pool (PREASSIGNED → AVAILABLE) |
+| `POST` | `/uin/status` | Update UIN status (retire, revoke, etc.) |
+| `POST` | `/uin/cleanup-preassigned` | Release stale pre-assigned UINs |
+| `GET` | `/uin/:uin` | Lookup UIN details |
+| `GET` | `/uin/:uin/audit` | Get complete audit trail |
+
+### Example: Pool Lifecycle Testing
+
+```bash
+# 1. Fetch a UIN from the pool (peek without claiming)
+curl "http://localhost:19020/pool/peek?status=AVAILABLE&limit=1"
+
+# 2. Pre-assign a UIN (reserves it)
+curl -X POST http://localhost:19020/pool/preassign \
+  -H "Content-Type: application/json" \
+  -d '{"scope": "foundational"}'
+
+# 3. Assign the UIN to an entity
+curl -X POST http://localhost:19020/pool/assign \
+  -H "Content-Type: application/json" \
+  -d '{"uin": "ABCD1234...", "entityId": "person-123"}'
+
+# 4. Retire or revoke the UIN
+curl -X POST http://localhost:19020/pool/retire \
+  -H "Content-Type: application/json" \
+  -d '{"uin": "ABCD1234...", "reason": "Death registration"}'
+```
 
 ---
 
