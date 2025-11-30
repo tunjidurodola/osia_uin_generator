@@ -159,20 +159,50 @@ export async function hmac(algorithm, key, data) {
 
 /**
  * Generate random bytes
- * Uses HSM if available, falls back to software
+ * PRIORITY: Uses HSM hardware TRNG when available, falls back to software CSPRNG
+ *
+ * Hardware TRNG provides higher quality entropy from certified sources:
+ * - Thales Luna: FIPS 140-2 Level 3 certified TRNG
+ * - SafeNet: Hardware entropy generator
+ * - Utimaco: Certified physical random source
+ *
  * @param {number} length - Number of bytes
  * @returns {Promise<Buffer>} Random bytes
  */
 export async function randomBytes(length) {
-  if (hsmClient && hsmClient.initialized && hsmClient.session) {
+  // Priority: Use HSM hardware TRNG when available
+  if (hsmClient && hsmClient.initialized && hsmClient.trngAvailable) {
     try {
       return await hsmClient.randomBytes(length);
     } catch (error) {
-      console.warn('[CryptoService] HSM random failed, using software:', error.message);
+      console.warn('[CryptoService] HSM TRNG failed, using software CSPRNG:', error.message);
     }
   }
 
+  // Fallback to Node.js CSPRNG
   return crypto.randomBytes(length);
+}
+
+/**
+ * Generate random bytes with source information
+ * @param {number} length - Number of bytes
+ * @returns {Promise<{bytes: Buffer, source: string, hardware: boolean, fipsLevel: number}>}
+ */
+export async function randomBytesWithSource(length) {
+  if (hsmClient && hsmClient.initialized && hsmClient.trngAvailable) {
+    try {
+      return await hsmClient.randomBytesWithSource(length);
+    } catch (error) {
+      console.warn('[CryptoService] HSM TRNG failed:', error.message);
+    }
+  }
+
+  return {
+    bytes: crypto.randomBytes(length),
+    source: 'Node.js CSPRNG',
+    hardware: false,
+    fipsLevel: 0
+  };
 }
 
 /**

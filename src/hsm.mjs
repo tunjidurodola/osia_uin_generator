@@ -1,65 +1,172 @@
 /**
  * HSM (Hardware Security Module) Integration Module
  * Provides PKCS#11 interface for cryptographic operations
- * Supports SoftHSM, Thales, AWS CloudHSM, YubiHSM
+ *
+ * PRIORITY: Hardware TRNG (True Random Number Generator) is preferred over
+ * software CSPRNG when an HSM is available. HSMs like Thales, SafeNet, and
+ * Utimaco provide certified hardware entropy sources.
+ *
+ * Supported HSM Providers:
+ * - Thales Luna (Network HSM, Luna SA/PCIe)
+ * - SafeNet (Luna, ProtectServer)
+ * - Utimaco (SecurityServer, CryptoServer)
+ * - nCipher/Entrust (nShield)
+ * - AWS CloudHSM
+ * - YubiHSM
+ * - SoftHSM (Development/Testing only)
  */
 
 import crypto from 'crypto';
 
 /**
- * HSM provider configurations
+ * HSM provider configurations with priority order
+ * Production HSMs are listed first, SoftHSM last (development only)
  */
 const HSM_PROVIDERS = {
+  // Thales Luna HSM - Enterprise grade
+  thales: {
+    name: 'Thales Luna',
+    type: 'production',
+    hasTrng: true,
+    fipsLevel: 3,
+    library: '/usr/lib/libCryptoki2_64.so',
+    altLibraries: [
+      '/opt/safenet/lunaclient/lib/libCryptoki2_64.so',
+      '/usr/safenet/lunaclient/lib/libCryptoki2_64.so',
+      '/opt/thales/dpod/lib/libCryptoki2_64.so'
+    ],
+    description: 'Thales Luna Network HSM with FIPS 140-2 Level 3 certification'
+  },
+
+  // SafeNet ProtectServer / Luna (legacy)
+  safenet: {
+    name: 'SafeNet',
+    type: 'production',
+    hasTrng: true,
+    fipsLevel: 3,
+    library: '/opt/safenet/protectserver/lib/libcryptoki.so',
+    altLibraries: [
+      '/opt/safenet/lunaclient/lib/libCryptoki2_64.so',
+      '/usr/lib/libsafenet.so',
+      '/opt/PTK/lib/libcryptoki.so'
+    ],
+    description: 'SafeNet ProtectServer with hardware TRNG'
+  },
+
+  // Utimaco SecurityServer / CryptoServer
+  utimaco: {
+    name: 'Utimaco',
+    type: 'production',
+    hasTrng: true,
+    fipsLevel: 3,
+    library: '/opt/utimaco/lib/libcs_pkcs11_R3.so',
+    altLibraries: [
+      '/opt/utimaco/cryptoserver/lib/libcs_pkcs11_R3.so',
+      '/usr/lib/utimaco/libcs_pkcs11_R3.so',
+      '/opt/Utimaco/Software/PKCS11/lib/libcs_pkcs11_R3.so',
+      '/opt/CryptoServer/lib/libcs_pkcs11_R3.so'
+    ],
+    description: 'Utimaco CryptoServer/SecurityServer with certified TRNG'
+  },
+
+  // nCipher/Entrust nShield
+  ncipher: {
+    name: 'nCipher/Entrust nShield',
+    type: 'production',
+    hasTrng: true,
+    fipsLevel: 3,
+    library: '/opt/nfast/toolkits/pkcs11/libcknfast.so',
+    altLibraries: [
+      '/usr/lib/libcknfast.so',
+      '/opt/nfast/lib/libcknfast.so'
+    ],
+    description: 'Entrust nShield HSM with hardware entropy'
+  },
+
+  // AWS CloudHSM
+  'aws-cloudhsm': {
+    name: 'AWS CloudHSM',
+    type: 'cloud',
+    hasTrng: true,
+    fipsLevel: 3,
+    library: '/opt/cloudhsm/lib/libcloudhsm_pkcs11.so',
+    altLibraries: [
+      '/opt/aws-cloudhsm/lib/libcloudhsm_pkcs11.so'
+    ],
+    description: 'AWS CloudHSM with FIPS 140-2 Level 3 validation'
+  },
+
+  // Azure Dedicated HSM (Thales Luna-based)
+  'azure-hsm': {
+    name: 'Azure Dedicated HSM',
+    type: 'cloud',
+    hasTrng: true,
+    fipsLevel: 3,
+    library: '/opt/safenet/lunaclient/lib/libCryptoki2_64.so',
+    altLibraries: [],
+    description: 'Azure Dedicated HSM (Thales Luna Network HSM)'
+  },
+
+  // YubiHSM 2
+  yubihsm: {
+    name: 'YubiHSM 2',
+    type: 'compact',
+    hasTrng: true,
+    fipsLevel: 2,
+    library: '/usr/lib/libyubihsm_pkcs11.so',
+    altLibraries: [
+      '/usr/local/lib/libyubihsm_pkcs11.so',
+      '/usr/lib/x86_64-linux-gnu/libyubihsm_pkcs11.so'
+    ],
+    description: 'YubiHSM 2 compact USB HSM with hardware RNG'
+  },
+
+  // SoftHSM - Development/Testing ONLY
   softhsm: {
     name: 'SoftHSM',
+    type: 'development',
+    hasTrng: false, // Uses software PRNG
+    fipsLevel: 0,
     library: '/usr/lib/softhsm/libsofthsm2.so',
     altLibraries: [
       '/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so',
       '/usr/local/lib/softhsm/libsofthsm2.so',
       '/opt/softhsm/lib/libsofthsm2.so'
-    ]
-  },
-  thales: {
-    name: 'Thales Luna',
-    library: '/usr/lib/libCryptoki2_64.so',
-    altLibraries: [
-      '/opt/safenet/lunaclient/lib/libCryptoki2_64.so'
-    ]
-  },
-  'aws-cloudhsm': {
-    name: 'AWS CloudHSM',
-    library: '/opt/cloudhsm/lib/libcloudhsm_pkcs11.so',
-    altLibraries: []
-  },
-  yubihsm: {
-    name: 'YubiHSM',
-    library: '/usr/lib/libyubihsm_pkcs11.so',
-    altLibraries: [
-      '/usr/local/lib/libyubihsm_pkcs11.so'
-    ]
-  },
-  'azure-keyvault': {
-    name: 'Azure Key Vault',
-    library: null, // Uses Azure SDK instead
-    altLibraries: []
+    ],
+    description: 'Software HSM for development only - NO hardware TRNG'
   }
 };
+
+/**
+ * Priority order for HSM detection (production HSMs first)
+ */
+const HSM_PRIORITY_ORDER = [
+  'thales',
+  'safenet',
+  'utimaco',
+  'ncipher',
+  'aws-cloudhsm',
+  'azure-hsm',
+  'yubihsm',
+  'softhsm'
+];
 
 /**
  * HSM configuration defaults
  */
 const DEFAULT_CONFIG = {
-  provider: process.env.HSM_PROVIDER || 'softhsm',
+  provider: process.env.HSM_PROVIDER || 'auto',
   library: process.env.HSM_LIBRARY || '',
   slot: parseInt(process.env.HSM_SLOT || '0'),
   pin: process.env.HSM_PIN || '',
   keyLabel: process.env.HSM_KEY_LABEL || 'osia-sector-key',
-  enabled: process.env.HSM_ENABLED === 'true'
+  enabled: process.env.HSM_ENABLED === 'true',
+  preferHardwareTrng: true // Always prefer hardware TRNG when available
 };
 
 /**
  * HSM Client class
- * Provides interface for HSM cryptographic operations
+ * Provides interface for HSM cryptographic operations with TRNG priority
  */
 export class HsmClient {
   constructor(config = {}) {
@@ -68,7 +175,39 @@ export class HsmClient {
     this.session = null;
     this.keyHandle = null;
     this.pkcs11 = null;
-    this.providerInfo = HSM_PROVIDERS[this.config.provider];
+    this.providerInfo = null;
+    this.detectedProvider = null;
+    this.trngAvailable = false;
+  }
+
+  /**
+   * Auto-detect available HSM by priority
+   * Prefers production HSMs with hardware TRNG
+   * @returns {Promise<{provider: string, info: object}|null>}
+   */
+  async autoDetectHsm() {
+    const fs = await import('fs');
+
+    for (const providerName of HSM_PRIORITY_ORDER) {
+      const provider = HSM_PROVIDERS[providerName];
+      if (!provider) continue;
+
+      // Check primary library path
+      if (provider.library && fs.existsSync(provider.library)) {
+        console.log(`[HSM] Detected ${provider.name} at ${provider.library}`);
+        return { provider: providerName, info: provider, library: provider.library };
+      }
+
+      // Check alternative library paths
+      for (const altLib of provider.altLibraries || []) {
+        if (fs.existsSync(altLib)) {
+          console.log(`[HSM] Detected ${provider.name} at ${altLib}`);
+          return { provider: providerName, info: provider, library: altLib };
+        }
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -80,15 +219,22 @@ export class HsmClient {
       return false;
     }
 
-    // For software fallback mode, always available
+    // For software fallback mode
     if (this.config.provider === 'software') {
       return true;
     }
 
     try {
-      // Check if PKCS#11 library exists
+      // Auto-detect if provider is 'auto'
+      if (this.config.provider === 'auto') {
+        const detected = await this.autoDetectHsm();
+        return detected !== null;
+      }
+
+      // Check specific provider
       const fs = await import('fs');
-      const libraryPath = this.config.library || this.providerInfo?.library;
+      const providerInfo = HSM_PROVIDERS[this.config.provider];
+      const libraryPath = this.config.library || providerInfo?.library;
 
       if (!libraryPath) {
         return false;
@@ -103,6 +249,7 @@ export class HsmClient {
 
   /**
    * Initialize HSM connection
+   * Prioritizes hardware TRNG when available
    * @returns {Promise<boolean>} Initialization success
    */
   async initialize() {
@@ -111,26 +258,52 @@ export class HsmClient {
     }
 
     if (!this.config.enabled) {
-      console.log('[HSM] HSM is disabled, using software fallback');
+      console.log('[HSM] HSM is disabled, using software CSPRNG');
       this.initialized = true;
       return true;
     }
 
     try {
+      // Auto-detect HSM if provider is 'auto'
+      let libraryPath = this.config.library;
+      let providerName = this.config.provider;
+
+      if (this.config.provider === 'auto' || !this.config.library) {
+        const detected = await this.autoDetectHsm();
+        if (detected) {
+          providerName = detected.provider;
+          libraryPath = detected.library;
+          this.providerInfo = detected.info;
+          this.detectedProvider = providerName;
+        }
+      } else {
+        this.providerInfo = HSM_PROVIDERS[this.config.provider];
+        this.detectedProvider = this.config.provider;
+      }
+
       // Try to load graphene-pk11 for PKCS#11 support
       const graphene = await this.loadPkcs11Module();
 
-      if (graphene) {
-        await this.initializePkcs11(graphene);
+      if (graphene && libraryPath) {
+        await this.initializePkcs11(graphene, libraryPath);
+
+        // Check if hardware TRNG is available
+        this.trngAvailable = this.providerInfo?.hasTrng === true && this.session !== null;
+
+        if (this.trngAvailable) {
+          console.log(`[HSM] Hardware TRNG available via ${this.providerInfo.name}`);
+        } else if (this.providerInfo?.type === 'development') {
+          console.warn('[HSM] WARNING: SoftHSM detected - NO hardware TRNG, using software PRNG');
+        }
       } else {
-        console.log('[HSM] PKCS#11 module not available, using software fallback');
+        console.log('[HSM] PKCS#11 module not available, using software CSPRNG');
       }
 
       this.initialized = true;
       return true;
     } catch (error) {
       console.error('[HSM] Initialization failed:', error.message);
-      console.log('[HSM] Falling back to software cryptography');
+      console.log('[HSM] Falling back to software CSPRNG');
       this.initialized = true;
       return true;
     }
@@ -142,7 +315,6 @@ export class HsmClient {
    */
   async loadPkcs11Module() {
     try {
-      // Try to dynamically import graphene-pk11
       const graphene = await import('graphene-pk11');
       return graphene;
     } catch (error) {
@@ -154,10 +326,9 @@ export class HsmClient {
   /**
    * Initialize PKCS#11 session
    * @param {object} graphene - PKCS#11 module
+   * @param {string} libraryPath - Path to PKCS#11 library
    */
-  async initializePkcs11(graphene) {
-    const libraryPath = this.config.library || this.providerInfo?.library;
-
+  async initializePkcs11(graphene, libraryPath) {
     if (!libraryPath) {
       throw new Error(`No library path for HSM provider: ${this.config.provider}`);
     }
@@ -188,7 +359,9 @@ export class HsmClient {
     // Find or create key
     await this.findOrCreateKey(graphene);
 
-    console.log(`[HSM] Initialized ${this.providerInfo?.name || this.config.provider} HSM`);
+    const providerName = this.providerInfo?.name || this.config.provider;
+    const trngStatus = this.providerInfo?.hasTrng ? 'with hardware TRNG' : 'with software PRNG';
+    console.log(`[HSM] Initialized ${providerName} ${trngStatus}`);
   }
 
   /**
@@ -229,6 +402,61 @@ export class HsmClient {
   }
 
   /**
+   * Generate random bytes using HSM TRNG or software CSPRNG
+   * PRIORITY: Hardware TRNG is always preferred when available
+   * @param {number} length - Number of bytes
+   * @returns {Promise<Buffer>} Random bytes
+   */
+  async randomBytes(length) {
+    // Use hardware TRNG if available (priority)
+    if (this.session && this.trngAvailable) {
+      try {
+        const randomData = this.session.generateRandom(length);
+        // Log first use of hardware TRNG
+        if (!this._loggedTrngUse) {
+          console.log(`[HSM] Using hardware TRNG from ${this.providerInfo?.name}`);
+          this._loggedTrngUse = true;
+        }
+        return randomData;
+      } catch (error) {
+        console.warn('[HSM] Hardware TRNG failed, falling back to software CSPRNG:', error.message);
+      }
+    }
+
+    // Fallback to software CSPRNG (Node.js crypto.randomBytes)
+    return crypto.randomBytes(length);
+  }
+
+  /**
+   * Generate random bytes - synchronous check, async generation
+   * Returns source information along with random bytes
+   * @param {number} length - Number of bytes
+   * @returns {Promise<{bytes: Buffer, source: string, hardware: boolean}>}
+   */
+  async randomBytesWithSource(length) {
+    if (this.session && this.trngAvailable) {
+      try {
+        const bytes = this.session.generateRandom(length);
+        return {
+          bytes,
+          source: this.providerInfo?.name || 'Hardware HSM',
+          hardware: true,
+          fipsLevel: this.providerInfo?.fipsLevel || 0
+        };
+      } catch (error) {
+        console.warn('[HSM] Hardware TRNG failed:', error.message);
+      }
+    }
+
+    return {
+      bytes: crypto.randomBytes(length),
+      source: 'Node.js CSPRNG',
+      hardware: false,
+      fipsLevel: 0
+    };
+  }
+
+  /**
    * Perform HMAC operation using HSM or software fallback
    * @param {string} algorithm - HMAC algorithm
    * @param {string} key - Key for HMAC (used in software mode)
@@ -242,13 +470,10 @@ export class HsmClient {
     }
 
     try {
-      // Use HSM for HMAC
       const graphene = await import('graphene-pk11');
-
       const mechanism = this.getMechanism(algorithm, graphene);
       const signature = this.session.createSign(mechanism, this.keyHandle)
         .once(Buffer.from(data));
-
       return signature;
     } catch (error) {
       console.warn('[HSM] HMAC failed, falling back to software:', error.message);
@@ -268,7 +493,6 @@ export class HsmClient {
       'sha384': graphene.MechanismEnum.SHA384_HMAC,
       'sha512': graphene.MechanismEnum.SHA512_HMAC
     };
-
     return { mechanism: mechanisms[algorithm.toLowerCase()] || mechanisms.sha256 };
   }
 
@@ -286,25 +510,6 @@ export class HsmClient {
   }
 
   /**
-   * Generate random bytes using HSM or software fallback
-   * @param {number} length - Number of bytes
-   * @returns {Promise<Buffer>} Random bytes
-   */
-  async randomBytes(length) {
-    // Use software fallback if HSM not available
-    if (!this.session) {
-      return crypto.randomBytes(length);
-    }
-
-    try {
-      return this.session.generateRandom(length);
-    } catch (error) {
-      console.warn('[HSM] Random generation failed, falling back to software:', error.message);
-      return crypto.randomBytes(length);
-    }
-  }
-
-  /**
    * Sign data using HSM or software fallback
    * @param {string} algorithm - Signature algorithm
    * @param {Buffer} data - Data to sign
@@ -312,7 +517,6 @@ export class HsmClient {
    * @returns {Promise<Buffer>} Signature
    */
   async sign(algorithm, data, key) {
-    // Use software fallback if HSM not available
     if (!this.pkcs11 || !this.keyHandle) {
       const sign = crypto.createSign(algorithm);
       sign.update(data);
@@ -322,9 +526,7 @@ export class HsmClient {
     try {
       const graphene = await import('graphene-pk11');
       const mechanism = this.getMechanism(algorithm, graphene);
-
-      return this.session.createSign(mechanism, this.keyHandle)
-        .once(data);
+      return this.session.createSign(mechanism, this.keyHandle).once(data);
     } catch (error) {
       console.warn('[HSM] Sign failed, falling back to software:', error.message);
       const sign = crypto.createSign(algorithm);
@@ -334,19 +536,25 @@ export class HsmClient {
   }
 
   /**
-   * Get HSM status
+   * Get HSM status with TRNG information
    * @returns {object} Status information
    */
   getStatus() {
     return {
       enabled: this.config.enabled,
       initialized: this.initialized,
-      provider: this.config.provider,
+      provider: this.detectedProvider || this.config.provider,
       providerName: this.providerInfo?.name || 'Unknown',
+      providerType: this.providerInfo?.type || 'unknown',
       hasHardware: !!this.pkcs11,
+      hasTrng: this.trngAvailable,
+      fipsLevel: this.providerInfo?.fipsLevel || 0,
       slot: this.config.slot,
       keyLabel: this.config.keyLabel,
-      mode: this.pkcs11 ? 'hardware' : 'software'
+      mode: this.pkcs11 ? 'hardware' : 'software',
+      randomSource: this.trngAvailable
+        ? `${this.providerInfo?.name} Hardware TRNG`
+        : 'Node.js CSPRNG'
     };
   }
 
@@ -375,6 +583,7 @@ export class HsmClient {
 
     this.initialized = false;
     this.keyHandle = null;
+    this.trngAvailable = false;
   }
 }
 
@@ -413,10 +622,29 @@ export async function initializeHsm(config = {}) {
   return client;
 }
 
+/**
+ * Get list of supported HSM providers
+ * @returns {object} Provider configurations
+ */
+export function getSupportedProviders() {
+  return HSM_PROVIDERS;
+}
+
+/**
+ * Get priority order for HSM detection
+ * @returns {string[]} Provider names in priority order
+ */
+export function getProviderPriorityOrder() {
+  return HSM_PRIORITY_ORDER;
+}
+
 export default {
   HsmClient,
   getHsmClient,
   isHsmEnabled,
   initializeHsm,
-  HSM_PROVIDERS
+  getSupportedProviders,
+  getProviderPriorityOrder,
+  HSM_PROVIDERS,
+  HSM_PRIORITY_ORDER
 };
