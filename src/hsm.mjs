@@ -138,17 +138,19 @@ const HSM_PROVIDERS = {
 };
 
 /**
- * Priority order for HSM detection (production HSMs first)
+ * Priority order for HSM detection
+ * Utimaco is prioritized first, followed by other production HSMs
+ * SoftHSM is last (development only - NO hardware TRNG)
  */
 const HSM_PRIORITY_ORDER = [
-  'thales',
-  'safenet',
-  'utimaco',
-  'ncipher',
-  'aws-cloudhsm',
-  'azure-hsm',
-  'yubihsm',
-  'softhsm'
+  'utimaco',      // Priority 1: Utimaco CryptoServer/SecurityServer
+  'thales',       // Priority 2: Thales Luna
+  'safenet',      // Priority 3: SafeNet ProtectServer
+  'ncipher',      // Priority 4: nCipher/Entrust nShield
+  'aws-cloudhsm', // Priority 5: AWS CloudHSM
+  'azure-hsm',    // Priority 6: Azure Dedicated HSM
+  'yubihsm',      // Priority 7: YubiHSM 2
+  'softhsm'       // Priority 8: SoftHSM (development only)
 ];
 
 /**

@@ -1188,24 +1188,65 @@ function SecurityStatus() {
       {/* HSM Providers Info */}
       <div className="section-card">
         <div className="section-header">
-          <h2>Supported HSM Providers</h2>
+          <h2>Supported HSM Providers (Priority Order)</h2>
         </div>
+        <p className="section-description">
+          Hardware TRNG is always prioritized over software CSPRNG. Production HSMs provide FIPS 140-2 Level 3 certified entropy.
+        </p>
         <div className="providers-grid">
           {[
-            { name: 'SoftHSM', desc: 'Software-based HSM for development and testing', icon: 'S' },
-            { name: 'Thales Luna', desc: 'Enterprise-grade network HSM', icon: 'T' },
-            { name: 'AWS CloudHSM', desc: 'Cloud-based HSM in AWS', icon: 'A' },
-            { name: 'YubiHSM', desc: 'Compact USB HSM device', icon: 'Y' },
-            { name: 'Azure Key Vault', desc: 'Azure managed HSM service', icon: 'Z' },
+            { name: 'Utimaco', desc: 'CryptoServer/SecurityServer - Priority 1', icon: 'U', priority: 1, fips: 3, trng: true },
+            { name: 'Thales Luna', desc: 'Enterprise network HSM - Priority 2', icon: 'T', priority: 2, fips: 3, trng: true },
+            { name: 'SafeNet', desc: 'ProtectServer HSM - Priority 3', icon: 'S', priority: 3, fips: 3, trng: true },
+            { name: 'nCipher/Entrust', desc: 'nShield HSM - Priority 4', icon: 'N', priority: 4, fips: 3, trng: true },
+            { name: 'AWS CloudHSM', desc: 'AWS managed HSM - Priority 5', icon: 'A', priority: 5, fips: 3, trng: true },
+            { name: 'Azure HSM', desc: 'Azure Dedicated HSM - Priority 6', icon: 'Z', priority: 6, fips: 3, trng: true },
+            { name: 'YubiHSM 2', desc: 'Compact USB HSM - Priority 7', icon: 'Y', priority: 7, fips: 2, trng: true },
+            { name: 'SoftHSM', desc: 'Development only - NO TRNG', icon: 'D', priority: 8, fips: 0, trng: false },
           ].map(p => (
-            <div key={p.name} className="provider-card">
+            <div key={p.name} className={`provider-card ${p.trng ? 'has-trng' : 'no-trng'}`}>
               <div className="provider-icon">{p.icon}</div>
               <div className="provider-info">
                 <h4>{p.name}</h4>
                 <p>{p.desc}</p>
+                <div className="provider-badges">
+                  {p.trng ? (
+                    <span className="badge badge-trng">Hardware TRNG</span>
+                  ) : (
+                    <span className="badge badge-no-trng">Software PRNG</span>
+                  )}
+                  {p.fips > 0 && (
+                    <span className="badge badge-fips">FIPS Level {p.fips}</span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* TRNG Priority Explanation */}
+      <div className="section-card">
+        <div className="section-header">
+          <h2>Random Number Generation</h2>
+        </div>
+        <div className="trng-explanation">
+          <div className="priority-list">
+            <div className="priority-item primary">
+              <span className="priority-num">1</span>
+              <div className="priority-content">
+                <strong>HSM Hardware TRNG</strong>
+                <p>FIPS 140-2 Level 3 certified entropy from physical random sources</p>
+              </div>
+            </div>
+            <div className="priority-item fallback">
+              <span className="priority-num">2</span>
+              <div className="priority-content">
+                <strong>Node.js CSPRNG</strong>
+                <p>Software-based fallback (crypto.randomBytes)</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1220,13 +1261,15 @@ function SecurityStatus() {
 VAULT_ENABLED=true
 VAULT_ADDR=http://127.0.0.1:8200
 VAULT_TOKEN=<token>
-# Or use AppRole
+# Or use AppRole (recommended for production)
 VAULT_ROLE_ID=<role_id>
 VAULT_SECRET_ID=<secret_id>
 
 # HSM Configuration
 HSM_ENABLED=true
-HSM_PROVIDER=softhsm|thales|aws-cloudhsm|yubihsm
+# Auto-detect in priority order (recommended)
+HSM_PROVIDER=auto
+# Or specify: utimaco|thales|safenet|ncipher|aws-cloudhsm|azure-hsm|yubihsm|softhsm
 HSM_LIBRARY=/path/to/pkcs11/library.so
 HSM_SLOT=0
 HSM_PIN=<pin>
