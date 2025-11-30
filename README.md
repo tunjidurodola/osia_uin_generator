@@ -112,7 +112,7 @@ graph TB
 |-------|------------|---------|
 | Runtime | Node.js | 20+ |
 | Server | Express.js | 4.x |
-| Database | PostgreSQL | 15+ |
+| Database | PostgreSQL | 17+ |
 | Query Builder | Knex.js | 3.x |
 | Frontend | React | 18.x |
 | Build Tool | Vite | 5.x |
@@ -128,7 +128,7 @@ graph TB
 ### Prerequisites
 
 - Node.js 20+
-- PostgreSQL 13+ (15+ recommended)
+- PostgreSQL 15+ (17+ recommended)
 - PM2 (optional, for production)
 - HashiCorp Vault (optional, for secret management)
 - HSM with PKCS#11 support (optional, for hardware TRNG)
