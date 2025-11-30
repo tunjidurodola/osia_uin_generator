@@ -1,11 +1,13 @@
 /**
  * Crypto Service - Unified Cryptographic Operations
  * Integrates HSM and Vault support with software fallback
+ * Includes provenance tracking for entropy sources
  */
 
 import crypto from 'crypto';
 import { getHsmClient, isHsmEnabled } from './hsm.mjs';
 import { getVaultClient, isVaultEnabled } from './vault.mjs';
+import { setProvenance } from './uinGenerator.mjs';
 
 /**
  * Crypto service state
@@ -173,13 +175,27 @@ export async function randomBytes(length) {
   // Priority: Use HSM hardware TRNG when available
   if (hsmClient && hsmClient.initialized && hsmClient.trngAvailable) {
     try {
-      return await hsmClient.randomBytes(length);
+      const bytes = await hsmClient.randomBytes(length);
+      // Set provenance for UIN generator
+      setProvenance({
+        source: hsmClient.config?.providerName || 'HSM Hardware TRNG',
+        hardware: true,
+        fipsLevel: hsmClient.config?.fipsLevel || 2,
+        provider: hsmClient.config?.provider || 'hsm'
+      });
+      return bytes;
     } catch (error) {
       console.warn('[CryptoService] HSM TRNG failed, using software CSPRNG:', error.message);
     }
   }
 
   // Fallback to Node.js CSPRNG
+  setProvenance({
+    source: 'Node.js CSPRNG',
+    hardware: false,
+    fipsLevel: 0,
+    provider: 'software'
+  });
   return crypto.randomBytes(length);
 }
 

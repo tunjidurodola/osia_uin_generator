@@ -1,6 +1,7 @@
 /**
  * Core UIN Generator Engine
  * Supports multiple generation modes: random, structured, sector_token, foundational
+ * Includes provenance tracking for entropy source (HSM TRNG vs Software CSPRNG)
  */
 
 import crypto from 'crypto';
@@ -9,13 +10,38 @@ import { deriveSectorToken } from './sectorToken.mjs';
 import { getConfig, parseCharset, excludeAmbiguous } from './config.mjs';
 import { computeUinHash } from './hash.mjs';
 
+// Provenance tracking - will be set by async generator
+let lastProvenance = {
+  source: 'Node.js CSPRNG',
+  hardware: false,
+  fipsLevel: 0,
+  provider: null
+};
+
+/**
+ * Get current provenance info
+ * @returns {object} Provenance information
+ */
+export function getProvenance() {
+  return { ...lastProvenance };
+}
+
+/**
+ * Set provenance info (called by cryptoService when using HSM)
+ * @param {object} provenance - Provenance data
+ */
+export function setProvenance(provenance) {
+  lastProvenance = { ...provenance };
+}
+
 /**
  * Generate a cryptographically secure random string
  * @param {number} length - Length of the string
  * @param {string} charset - Character set to use
+ * @param {Buffer} [providedBytes] - Optional pre-generated random bytes (from HSM)
  * @returns {string} Random string
  */
-function generateRandomString(length, charset) {
+function generateRandomString(length, charset, providedBytes = null) {
   if (length <= 0) {
     throw new Error('Length must be positive');
   }
@@ -25,7 +51,7 @@ function generateRandomString(length, charset) {
   }
 
   const charsetLength = charset.length;
-  const randomBytes = crypto.randomBytes(length * 2); // Generate extra bytes for better distribution
+  const randomBytes = providedBytes || crypto.randomBytes(length * 2);
 
   let result = '';
   let byteIndex = 0;
@@ -43,7 +69,7 @@ function generateRandomString(length, charset) {
     byteIndex++;
   }
 
-  // If we exhausted our random bytes, generate more
+  // If we exhausted our random bytes, generate more (software fallback)
   if (result.length < length) {
     return generateRandomString(length, charset);
   }
@@ -197,7 +223,8 @@ function generateRandomUin(options) {
     value: baseUin,
     mode: 'random',
     checksum: checksumInfo,
-    hash_rmd160
+    hash_rmd160,
+    provenance: getProvenance()
   };
 }
 
@@ -251,7 +278,8 @@ function generateStructuredUin(options) {
     rawComponents: components,
     template: options.template,
     checksum: checksumInfo,
-    hash_rmd160
+    hash_rmd160,
+    provenance: getProvenance()
   };
 }
 
@@ -297,6 +325,7 @@ function generateFoundationalUin(options) {
     mode: 'foundational',
     checksum: checksumInfo,
     hash_rmd160,
+    provenance: getProvenance(),
     properties: {
       highEntropy: true,
       noPii: true,

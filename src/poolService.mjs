@@ -76,7 +76,8 @@ export async function preGenerateUins({ count, mode, scope, options = {} }) {
           hash_rmd160: result.hash_rmd160,
           meta: {
             checksum: result.checksum || null,
-            rawComponents: result.rawComponents || null
+            rawComponents: result.rawComponents || null,
+            provenance: result.provenance || null
           }
         })
         .returning('*');

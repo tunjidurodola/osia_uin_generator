@@ -113,10 +113,12 @@ const HSM_PROVIDERS = {
     type: 'compact',
     hasTrng: true,
     fipsLevel: 2,
-    library: '/usr/lib/libyubihsm_pkcs11.so',
+    library: '/usr/local/lib/pkcs11/yubihsm_pkcs11.so',
     altLibraries: [
+      '/usr/lib/libyubihsm_pkcs11.so',
       '/usr/local/lib/libyubihsm_pkcs11.so',
-      '/usr/lib/x86_64-linux-gnu/libyubihsm_pkcs11.so'
+      '/usr/lib/x86_64-linux-gnu/libyubihsm_pkcs11.so',
+      '/usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so'
     ],
     description: 'YubiHSM 2 compact USB HSM with hardware RNG'
   },
@@ -289,12 +291,21 @@ export class HsmClient {
       if (graphene && libraryPath) {
         await this.initializePkcs11(graphene, libraryPath);
 
-        // Check if hardware TRNG is available
+        // Check if hardware TRNG is available - requires session and provider that has TRNG
         this.trngAvailable = this.providerInfo?.hasTrng === true && this.session !== null;
 
         if (this.trngAvailable) {
-          console.log(`[HSM] Hardware TRNG available via ${this.providerInfo.name}`);
-        } else if (this.providerInfo?.type === 'development') {
+          // Test TRNG by generating a few bytes
+          try {
+            this.session.generateRandom(16);
+            console.log(`[HSM] Hardware TRNG verified via ${this.providerInfo.name}`);
+          } catch (trngError) {
+            console.warn('[HSM] Hardware TRNG test failed:', trngError.message);
+            this.trngAvailable = false;
+          }
+        }
+
+        if (!this.trngAvailable && this.providerInfo?.type === 'development') {
           console.warn('[HSM] WARNING: SoftHSM detected - NO hardware TRNG, using software PRNG');
         }
       } else {
@@ -317,10 +328,20 @@ export class HsmClient {
    */
   async loadPkcs11Module() {
     try {
+      // graphene-pk11 exports Module directly
       const graphene = await import('graphene-pk11');
-      return graphene;
+      // Check what we got and log for debugging
+      console.log('[HSM] graphene-pk11 exports:', Object.keys(graphene));
+      // The Module class should be in the exports
+      if (graphene.Module) {
+        return graphene;
+      } else if (graphene.default && graphene.default.Module) {
+        return graphene.default;
+      }
+      console.warn('[HSM] graphene-pk11 Module not found in exports');
+      return null;
     } catch (error) {
-      // PKCS#11 module not installed
+      console.warn('[HSM] graphene-pk11 module not available:', error.message);
       return null;
     }
   }
@@ -335,31 +356,72 @@ export class HsmClient {
       throw new Error(`No library path for HSM provider: ${this.config.provider}`);
     }
 
-    // Initialize PKCS#11
-    this.pkcs11 = new graphene.Module();
-    this.pkcs11.load(libraryPath);
+    console.log(`[HSM] Loading PKCS#11 library: ${libraryPath}`);
+
+    // Initialize PKCS#11 using static Module.load() method
+    this.pkcs11 = graphene.Module.load(libraryPath);
     this.pkcs11.initialize();
 
-    // Get slot
+    // Get slot - for YubiHSM, slot 0 corresponds to connector address
     const slots = this.pkcs11.getSlots(true);
-    if (slots.length <= this.config.slot) {
-      throw new Error(`HSM slot ${this.config.slot} not found`);
+    console.log(`[HSM] Found ${slots.length} slot(s)`);
+
+    if (slots.length === 0) {
+      throw new Error('No HSM slots found. Check connector status.');
     }
 
-    const slot = slots.items(this.config.slot);
+    // YubiHSM typically uses slot 0
+    const slotIndex = Math.min(this.config.slot, slots.length - 1);
+    const slot = slots.items(slotIndex);
+    console.log(`[HSM] Using slot ${slotIndex}: ${slot.slotDescription}`);
 
-    // Open session
-    this.session = slot.open(
-      graphene.SessionFlag.RW_SESSION | graphene.SessionFlag.SERIAL_SESSION
-    );
+    // Open session - YubiHSM requires specific flags
+    // Try with SERIAL_SESSION only first (for read operations)
+    try {
+      this.session = slot.open(graphene.SessionFlag.SERIAL_SESSION);
+      console.log('[HSM] Opened read-only session');
+    } catch (sessionError) {
+      console.log('[HSM] Trying RW session...');
+      this.session = slot.open(
+        graphene.SessionFlag.RW_SESSION | graphene.SessionFlag.SERIAL_SESSION
+      );
+    }
 
     // Login if PIN provided
     if (this.config.pin) {
-      this.session.login(this.config.pin, graphene.UserType.USER);
+      try {
+        // YubiHSM PKCS#11 PIN format: <4-digit-hex-authkey><password>
+        // Example: 0001password (authkey 1, password "password")
+        // The PIN must be at least 8 characters (4 hex + 4 password minimum)
+        let pin = this.config.pin;
+
+        // Check if already in YubiHSM format (starts with 4 hex digits)
+        const isYubiHsmFormat = /^[0-9a-fA-F]{4}/.test(pin) && pin.length >= 8;
+
+        if (this.detectedProvider === 'yubihsm' && !isYubiHsmFormat) {
+          // For YubiHSM, prepend default authkey 0001 (authkey ID 1)
+          pin = '0001' + pin;
+          console.log('[HSM] YubiHSM: Using formatted PIN (0001 + password)');
+        }
+
+        console.log(`[HSM] Attempting login (PIN length: ${pin.length})...`);
+        this.session.login(pin, graphene.UserType.USER);
+        console.log('[HSM] Login successful');
+      } catch (loginError) {
+        console.warn('[HSM] Login failed:', loginError.message);
+        console.warn('[HSM] Note: YubiHSM requires PIN format: 0001<password> (min 8 chars total)');
+        // Continue without login - some operations may still work
+      }
+    } else {
+      console.log('[HSM] No PIN provided, skipping login');
     }
 
-    // Find or create key
-    await this.findOrCreateKey(graphene);
+    // Find or create key (may fail if not logged in)
+    try {
+      await this.findOrCreateKey(graphene);
+    } catch (keyError) {
+      console.warn('[HSM] Key operation failed:', keyError.message);
+    }
 
     const providerName = this.providerInfo?.name || this.config.provider;
     const trngStatus = this.providerInfo?.hasTrng ? 'with hardware TRNG' : 'with software PRNG';

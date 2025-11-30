@@ -26,8 +26,8 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
+    "graphene-pk11": "^2.3.6",
     "knex": "^3.1.0",
     "pg": "^8.11.3"
-  },
-  "devDependencies": {}
+  }
 }

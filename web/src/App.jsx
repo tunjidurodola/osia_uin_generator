@@ -1,39 +1,64 @@
-import { useState, useEffect, useRef, useId } from 'react';
+import { useState, useEffect, useRef, useId, useCallback } from 'react';
 import mermaid from 'mermaid';
 import './App.css';
 
-// Initialize mermaid with sky theme
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#87CEEB',
-    primaryTextColor: '#1a1a2e',
-    primaryBorderColor: '#5BA4CF',
-    secondaryColor: '#E0F4FF',
-    tertiaryColor: '#F0F8FF',
-    lineColor: '#5BA4CF',
-    textColor: '#1a1a2e',
-    mainBkg: '#E0F4FF',
-    nodeBorder: '#5BA4CF',
-    clusterBkg: '#F0F8FF',
-    clusterBorder: '#87CEEB',
-    titleColor: '#1a1a2e',
-    edgeLabelBackground: '#ffffff',
-    nodeTextColor: '#1a1a2e',
-  },
-  flowchart: {
-    curve: 'basis',
-    padding: 20,
-  },
-  sequence: {
-    actorMargin: 50,
-    boxMargin: 10,
-    boxTextMargin: 5,
-    noteMargin: 10,
-    messageMargin: 35,
-  },
-});
+// Mermaid theme configurations
+const mermaidLightTheme = {
+  primaryColor: '#7c3aed',
+  primaryTextColor: '#1a1a2e',
+  primaryBorderColor: '#5E17EB',
+  secondaryColor: '#E0E7FF',
+  tertiaryColor: '#F5F3FF',
+  lineColor: '#5E17EB',
+  textColor: '#1a1a2e',
+  mainBkg: '#F5F3FF',
+  nodeBorder: '#5E17EB',
+  clusterBkg: '#E0E7FF',
+  clusterBorder: '#7c3aed',
+  titleColor: '#1a1a2e',
+  edgeLabelBackground: '#ffffff',
+  nodeTextColor: '#1a1a2e',
+};
+
+const mermaidDarkTheme = {
+  primaryColor: '#7c3aed',
+  primaryTextColor: '#e2e8f0',
+  primaryBorderColor: '#8b5cf6',
+  secondaryColor: '#312e81',
+  tertiaryColor: '#1e1b4b',
+  lineColor: '#8b5cf6',
+  textColor: '#e2e8f0',
+  mainBkg: '#1e1b4b',
+  nodeBorder: '#8b5cf6',
+  clusterBkg: '#312e81',
+  clusterBorder: '#7c3aed',
+  titleColor: '#e2e8f0',
+  edgeLabelBackground: '#1e293b',
+  nodeTextColor: '#e2e8f0',
+};
+
+// Initialize mermaid
+const initMermaid = (isDark = false) => {
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    themeVariables: isDark ? mermaidDarkTheme : mermaidLightTheme,
+    flowchart: {
+      curve: 'basis',
+      padding: 20,
+    },
+    sequence: {
+      actorMargin: 50,
+      boxMargin: 10,
+      boxTextMargin: 5,
+      noteMargin: 10,
+      messageMargin: 35,
+    },
+  });
+};
+
+// Initial mermaid setup
+initMermaid(document.documentElement.getAttribute('data-theme') === 'dark');
 
 // Mermaid Diagram Component
 function MermaidDiagram({ chart, title }) {
@@ -311,12 +336,273 @@ function PoolDashboard() {
         )}
       </div>
 
+      {/* UIN Lifecycle Operations */}
+      <UinLifecycleOperations onStatusChange={fetchStats} />
+
       {error && (
         <div className="error-message">
           <span className="error-icon">!</span>
           {error}
         </div>
       )}
+    </div>
+  );
+}
+
+// UIN Lifecycle Operations Component
+function UinLifecycleOperations({ onStatusChange }) {
+  const [activeOp, setActiveOp] = useState('fetch');
+  const [uinInput, setUinInput] = useState('');
+  const [entityId, setEntityId] = useState('');
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [peekList, setPeekList] = useState([]);
+
+  const operations = [
+    { id: 'fetch', label: 'Fetch', desc: 'View top UINs in pool', method: 'GET', endpoint: '/pool/peek' },
+    { id: 'preassign', label: 'Pre-assign', desc: 'Reserve a UIN from pool', method: 'POST', endpoint: '/pool/preassign' },
+    { id: 'assign', label: 'Assign', desc: 'Assign UIN to entity', method: 'POST', endpoint: '/pool/assign' },
+    { id: 'revoke', label: 'Revoke', desc: 'Revoke an assigned UIN', method: 'POST', endpoint: '/pool/revoke' },
+    { id: 'retire', label: 'Retire', desc: 'Permanently retire a UIN', method: 'POST', endpoint: '/pool/retire' },
+  ];
+
+  const executeOperation = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    const op = operations.find(o => o.id === activeOp);
+
+    try {
+      if (activeOp === 'fetch') {
+        // Fetch top UINs from pool (peek without claiming)
+        const response = await fetch(`${API_BASE_URL}${op.endpoint}?status=AVAILABLE&limit=10`);
+        const data = await response.json();
+        if (data.success) {
+          setPeekList(data.uins || []);
+          setResult({ message: `Found ${data.uins?.length || 0} available UINs`, count: data.uins?.length || 0 });
+        } else {
+          setError(data.error || 'Failed to fetch UINs');
+        }
+      } else {
+        let body = {};
+
+        if (activeOp === 'preassign') {
+          body = { scope: 'foundational' };
+        } else if (activeOp === 'assign') {
+          body = { uin: uinInput, entityId: entityId || `entity-${Date.now()}` };
+        } else if (activeOp === 'revoke') {
+          body = { uin: uinInput, reason: reason || 'Manual revocation via UI' };
+        } else if (activeOp === 'retire') {
+          body = { uin: uinInput, reason: reason || 'Manual retirement via UI' };
+        }
+
+        const response = await fetch(`${API_BASE_URL}${op.endpoint}`, {
+          method: op.method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          setResult(data);
+          if (data.uin) setUinInput(data.uin);
+          if (onStatusChange) onStatusChange();
+        } else {
+          setError(data.error || `${op.label} operation failed`);
+        }
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="section-card">
+      <div className="section-header">
+        <h2>UIN Lifecycle Operations</h2>
+        <p className="section-description">Test the complete UIN lifecycle: pre-assign → assign → revoke/retire</p>
+      </div>
+
+      {/* Operation Tabs */}
+      <div className="operation-tabs">
+        {operations.map(op => (
+          <button
+            key={op.id}
+            className={`operation-tab ${activeOp === op.id ? 'active' : ''}`}
+            onClick={() => { setActiveOp(op.id); setResult(null); setError(null); }}
+          >
+            <span className="op-label">{op.label}</span>
+            <span className="op-desc">{op.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Operation Form */}
+      <div className="operation-form">
+        {activeOp === 'fetch' && (
+          <div className="form-hint">
+            <p>Peek at the top available UINs in the pool without claiming them. Use this to see what's available and select a UIN for testing lifecycle operations.</p>
+          </div>
+        )}
+
+        {activeOp === 'preassign' && (
+          <div className="form-hint">
+            <p>Click the button to pre-assign an available UIN from the pool. The UIN will be reserved but not yet assigned to an entity.</p>
+          </div>
+        )}
+
+        {(activeOp === 'assign' || activeOp === 'revoke' || activeOp === 'retire') && (
+          <div className="form-group">
+            <label>UIN</label>
+            <input
+              type="text"
+              value={uinInput}
+              onChange={(e) => setUinInput(e.target.value.toUpperCase())}
+              placeholder="Enter UIN (e.g., A1B2C3D4E5F6G7H8I9)"
+              className="input-text mono"
+            />
+            <small className="help-text">
+              {activeOp === 'assign' ? 'Enter a pre-assigned UIN to assign to an entity' :
+               activeOp === 'revoke' ? 'Enter an assigned UIN to revoke' :
+               'Enter a UIN to permanently retire'}
+            </small>
+          </div>
+        )}
+
+        {activeOp === 'assign' && (
+          <div className="form-group">
+            <label>Entity ID</label>
+            <input
+              type="text"
+              value={entityId}
+              onChange={(e) => setEntityId(e.target.value)}
+              placeholder="Entity identifier (optional, auto-generated if empty)"
+              className="input-text"
+            />
+            <small className="help-text">The identifier of the entity this UIN will be assigned to</small>
+          </div>
+        )}
+
+        {(activeOp === 'revoke' || activeOp === 'retire') && (
+          <div className="form-group">
+            <label>Reason</label>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={activeOp === 'revoke' ? 'Reason for revocation' : 'Reason for retirement'}
+              className="input-text"
+            />
+            <small className="help-text">Optional reason for audit trail</small>
+          </div>
+        )}
+
+        <div className="form-actions">
+          <button
+            onClick={executeOperation}
+            disabled={loading || ((activeOp !== 'preassign' && activeOp !== 'fetch') && !uinInput)}
+            className={`btn-primary btn-large ${activeOp === 'revoke' ? 'btn-warning' : ''} ${activeOp === 'retire' ? 'btn-danger' : ''}`}
+          >
+            {loading ? 'Processing...' : activeOp === 'fetch' ? 'Fetch Top UINs' : `Execute ${operations.find(o => o.id === activeOp)?.label}`}
+          </button>
+        </div>
+
+        {/* Peek List Display for Fetch operation */}
+        {activeOp === 'fetch' && peekList.length > 0 && (
+          <div className="peek-list">
+            <div className="peek-header">
+              <h4>Top Available UINs</h4>
+              <span className="peek-count">{peekList.length} UINs</span>
+            </div>
+            <div className="peek-items">
+              {peekList.map((item, index) => (
+                <div key={item.uin} className="peek-item" onClick={() => setUinInput(item.uin)}>
+                  <span className="peek-index">#{index + 1}</span>
+                  <code className="peek-uin">{item.uin}</code>
+                  <div className="peek-meta">
+                    <span className="peek-scope">{item.scope}</span>
+                    <span className="peek-time">{new Date(item.iat).toLocaleDateString()}</span>
+                    {item.meta?.provenance && (
+                      <span className={`peek-provenance ${item.meta.provenance.hardware ? 'hardware' : 'software'}`}>
+                        {item.meta.provenance.hardware ? 'HSM TRNG' : 'CSPRNG'}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    className="btn-use"
+                    onClick={(e) => { e.stopPropagation(); setUinInput(item.uin); setActiveOp('preassign'); }}
+                    title="Use this UIN"
+                  >
+                    Use
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Result Display */}
+        {result && activeOp !== 'fetch' && (
+          <div className="operation-result success">
+            <div className="result-header">
+              <span className="result-icon">✓</span>
+              <span className="result-title">Operation Successful</span>
+            </div>
+            <div className="result-body">
+              {result.uin && (
+                <div className="result-item">
+                  <span className="result-label">UIN</span>
+                  <code className="result-value">{result.uin}</code>
+                </div>
+              )}
+              {result.status && (
+                <div className="result-item">
+                  <span className="result-label">New Status</span>
+                  <span className={`status-pill status-${result.status}`}>{result.status}</span>
+                </div>
+              )}
+              {result.entityId && (
+                <div className="result-item">
+                  <span className="result-label">Entity ID</span>
+                  <span className="result-value">{result.entityId}</span>
+                </div>
+              )}
+              {result.message && (
+                <div className="result-item">
+                  <span className="result-label">Message</span>
+                  <span className="result-value">{result.message}</span>
+                </div>
+              )}
+              {result.record?.meta?.provenance && (
+                <div className="result-item">
+                  <span className="result-label">Provenance</span>
+                  <span className={`provenance-badge ${result.record.meta.provenance.hardware ? 'hardware' : 'software'}`}>
+                    {result.record.meta.provenance.source}
+                    {result.record.meta.provenance.fipsLevel > 0 && ` (FIPS Level ${result.record.meta.provenance.fipsLevel})`}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="operation-result error">
+            <div className="result-header">
+              <span className="result-icon">✕</span>
+              <span className="result-title">Operation Failed</span>
+            </div>
+            <div className="result-body">
+              <p>{error}</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -373,9 +659,11 @@ function Documentation() {
                 <li><strong>Four Generation Modes</strong> - Foundational, Random, Structured, and Sector Token</li>
                 <li><strong>PostgreSQL Pool Management</strong> - Pre-generation, claiming, and assignment workflows</li>
                 <li><strong>Cryptographic Security</strong> - CSPRNG, HMAC-SHA256, RIPEMD-160 hashing</li>
+                <li><strong>HSM TRNG Support</strong> - Hardware True Random Number Generation with provenance tracking</li>
                 <li><strong>Complete Audit Trail</strong> - Immutable logging of all UIN lifecycle events</li>
                 <li><strong>Sector Tokenization</strong> - Unlinkable, sector-specific derived identifiers</li>
-                <li><strong>RFC 7519 JWT Support</strong> - Token-based UIN representation</li>
+                <li><strong>Multi-Format Output</strong> - JSON, JWT (RFC 7519), and JSON-LD (W3C Linked Data)</li>
+                <li><strong>Entropy Provenance</strong> - Track whether UINs were generated using HSM TRNG or software CSPRNG</li>
               </ul>
 
               <h2>Supported Sectors</h2>
@@ -649,6 +937,42 @@ pm2 start ecosystem.config.cjs`}</pre>
               <div className="endpoint-card">
                 <div className="endpoint-header">
                   <span className="method get">GET</span>
+                  <code>/pool/peek</code>
+                </div>
+                <p>Preview top available UINs without claiming them.</p>
+                <pre className="code-block">{`// Request: GET /pool/peek?status=AVAILABLE&limit=10
+// Response
+{
+  "success": true,
+  "uins": [
+    { "uin": "ABC123...", "scope": "foundational", "iat": "...", "meta": { "provenance": {...} } }
+  ]
+}`}</pre>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method post">POST</span>
+                  <code>/pool/revoke</code>
+                </div>
+                <p>Revoke an assigned UIN (fraud, error correction).</p>
+                <pre className="code-block">{`// Request
+{ "uin": "ABCD1234...", "reason": "Fraud detected" }`}</pre>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method post">POST</span>
+                  <code>/pool/retire</code>
+                </div>
+                <p>Retire a UIN (end-of-life, death registration).</p>
+                <pre className="code-block">{`// Request
+{ "uin": "ABCD1234...", "reason": "Death registration" }`}</pre>
+              </div>
+
+              <div className="endpoint-card">
+                <div className="endpoint-header">
+                  <span className="method get">GET</span>
                   <code>/uin/:uin</code>
                 </div>
                 <p>Lookup UIN details by value.</p>
@@ -806,9 +1130,14 @@ pm2 start ecosystem.config.cjs`}</pre>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>Random Generation</td>
+                    <td>Random Generation (Primary)</td>
+                    <td>HSM Hardware TRNG</td>
+                    <td>FIPS 140-2 certified entropy from physical sources</td>
+                  </tr>
+                  <tr>
+                    <td>Random Generation (Fallback)</td>
                     <td>Node.js <code>crypto.randomBytes</code></td>
-                    <td>CSPRNG for UIN generation</td>
+                    <td>Software CSPRNG when HSM unavailable</td>
                   </tr>
                   <tr>
                     <td>Integrity Hash</td>
@@ -827,6 +1156,18 @@ pm2 start ecosystem.config.cjs`}</pre>
                   </tr>
                 </tbody>
               </table>
+
+              <h2>Entropy Provenance Tracking</h2>
+              <p>Every generated UIN includes provenance metadata identifying its entropy source:</p>
+              <pre className="code-block">{`{
+  "provenance": {
+    "source": "HSM Hardware TRNG" | "Node.js CSPRNG",
+    "hardware": true | false,
+    "fipsLevel": 0 | 2 | 3,
+    "provider": "utimaco" | "yubihsm" | "thales" | "software"
+  }
+}`}</pre>
+              <p>HSM TRNG is always prioritized over software CSPRNG when available.</p>
 
               <h2>Sector Token Security</h2>
               <MermaidDiagram
@@ -1070,7 +1411,17 @@ function SecurityStatus() {
             {/* HSM Status Card */}
             <div className={`security-card ${status.hsm?.enabled ? 'enabled' : 'disabled'}`}>
               <div className="security-card-header">
-                <h3>HSM</h3>
+                <div className="header-with-logo">
+                  {status.hsm?.provider && (
+                    <img
+                      src={`/logos/${status.hsm?.provider === 'yubihsm' ? 'yubico' : status.hsm?.provider}.png`}
+                      alt="HSM"
+                      className="card-logo"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  )}
+                  <h3>{status.hsm?.providerName || 'HSM'}</h3>
+                </div>
                 <span className={`status-indicator ${status.hsm?.enabled ? 'active' : 'inactive'}`}>
                   {status.hsm?.enabled ? 'Enabled' : 'Disabled'}
                 </span>
@@ -1115,7 +1466,10 @@ function SecurityStatus() {
             {/* Vault Status Card */}
             <div className={`security-card ${status.vault?.enabled ? 'enabled' : 'disabled'}`}>
               <div className="security-card-header">
-                <h3>HashiCorp Vault</h3>
+                <div className="header-with-logo">
+                  <img src="/logos/vault.png" alt="Vault" className="card-logo" onError={(e) => { e.target.style.display = 'none'; }} />
+                  <h3>HashiCorp Vault</h3>
+                </div>
                 <span className={`status-indicator ${status.vault?.enabled ? 'active' : 'inactive'}`}>
                   {status.vault?.enabled ? 'Enabled' : 'Disabled'}
                 </span>
@@ -1195,17 +1549,23 @@ function SecurityStatus() {
         </p>
         <div className="providers-grid">
           {[
-            { name: 'Utimaco', desc: 'CryptoServer/SecurityServer - Priority 1', icon: 'U', priority: 1, fips: 3, trng: true },
-            { name: 'Thales Luna', desc: 'Enterprise network HSM - Priority 2', icon: 'T', priority: 2, fips: 3, trng: true },
-            { name: 'SafeNet', desc: 'ProtectServer HSM - Priority 3', icon: 'S', priority: 3, fips: 3, trng: true },
-            { name: 'nCipher/Entrust', desc: 'nShield HSM - Priority 4', icon: 'N', priority: 4, fips: 3, trng: true },
-            { name: 'AWS CloudHSM', desc: 'AWS managed HSM - Priority 5', icon: 'A', priority: 5, fips: 3, trng: true },
-            { name: 'Azure HSM', desc: 'Azure Dedicated HSM - Priority 6', icon: 'Z', priority: 6, fips: 3, trng: true },
-            { name: 'YubiHSM 2', desc: 'Compact USB HSM - Priority 7', icon: 'Y', priority: 7, fips: 2, trng: true },
-            { name: 'SoftHSM', desc: 'Development only - NO TRNG', icon: 'D', priority: 8, fips: 0, trng: false },
+            { name: 'Utimaco', desc: 'CryptoServer/SecurityServer - Priority 1', priority: 1, fips: 3, trng: true, logo: '/logos/utimaco.png' },
+            { name: 'Thales Luna', desc: 'Enterprise network HSM - Priority 2', priority: 2, fips: 3, trng: true, logo: '/logos/thales.png' },
+            { name: 'SafeNet', desc: 'ProtectServer HSM - Priority 3', priority: 3, fips: 3, trng: true, logo: '/logos/safenet.png' },
+            { name: 'Entrust nShield', desc: 'nShield HSM - Priority 4', priority: 4, fips: 3, trng: true, logo: '/logos/entrust.png' },
+            { name: 'AWS CloudHSM', desc: 'AWS managed HSM - Priority 5', priority: 5, fips: 3, trng: true, logo: '/logos/aws.png' },
+            { name: 'Azure Dedicated HSM', desc: 'Azure HSM (Thales-based) - Priority 6', priority: 6, fips: 3, trng: true, logo: '/logos/azure.png' },
+            { name: 'YubiHSM 2', desc: 'Compact USB HSM - Priority 7', priority: 7, fips: 2, trng: true, logo: '/logos/yubikey.png' },
+            { name: 'SoftHSM', desc: 'Development only - NO TRNG', priority: 8, fips: 0, trng: false, logo: '/logos/softhsm.png' },
           ].map(p => (
             <div key={p.name} className={`provider-card ${p.trng ? 'has-trng' : 'no-trng'}`}>
-              <div className="provider-icon">{p.icon}</div>
+              <div className="provider-logo">
+                <img
+                  src={p.logo}
+                  alt={`${p.name} logo`}
+                  onError={(e) => { e.target.src = '/logos/default-hsm.svg'; }}
+                />
+              </div>
               <div className="provider-info">
                 <h4>{p.name}</h4>
                 <p>{p.desc}</p>
@@ -1509,13 +1869,95 @@ function generateJwt(payload) {
   return `${headerB64}.${payloadB64}.`;
 }
 
+// Generate JSON-LD from payload
+function generateJsonLd(payload, provenance) {
+  return {
+    "@context": {
+      "@vocab": "https://schema.org/",
+      "osia": "https://osia.readthedocs.io/en/latest/",
+      "uin": "osia:uniqueIdentificationNumber",
+      "iss": "osia:issuer",
+      "iat": "osia:issuedAt",
+      "exp": "osia:expiresAt",
+      "provenance": "osia:provenance"
+    },
+    "@type": "osia:UniqueIdentificationNumber",
+    "@id": `urn:osia:uin:${payload.uin}`,
+    "identifier": payload.uin,
+    "uin_formatted": payload.uin_formatted,
+    "mode": payload.mode,
+    "issuer": payload.iss,
+    "issuedAt": payload.iat ? new Date(payload.iat * 1000).toISOString() : undefined,
+    "notBefore": payload.nbf ? new Date(payload.nbf * 1000).toISOString() : undefined,
+    "expiresAt": payload.exp ? new Date(payload.exp * 1000).toISOString() : undefined,
+    "checksum": payload.checksum,
+    "hash_rmd160": payload.hash_rmd160,
+    "provenance": provenance ? {
+      "@type": "osia:Provenance",
+      "source": provenance.source,
+      "hardware": provenance.hardware,
+      "fipsLevel": provenance.fipsLevel,
+      "provider": provenance.provider
+    } : undefined
+  };
+}
+
+// Theme Toggle Component
+function ThemeToggle({ theme, onToggle }) {
+  return (
+    <button
+      className="theme-toggle"
+      onClick={onToggle}
+      title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+    >
+      {theme === 'dark' ? (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      ) : (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      )}
+    </button>
+  );
+}
+
 // Main App Component
 function App() {
+  // Theme state - check localStorage and system preference
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem('osia-theme');
+    if (savedTheme) return savedTheme;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+
   const [activeTab, setActiveTab] = useState('generate');
   const [mode, setMode] = useState('foundational');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Apply theme to document
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('osia-theme', theme);
+    initMermaid(theme === 'dark');
+  }, [theme]);
+
+  // Toggle theme
+  const toggleTheme = useCallback(() => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  }, []);
 
   // Form state for different modes
   const [length, setLength] = useState(19);
@@ -1581,6 +2023,10 @@ function App() {
 
   const payload = computePayload();
   const jwt = payload ? generateJwt(payload) : null;
+  const jsonLd = payload ? generateJsonLd(payload, result?.provenance) : null;
+
+  // Output format state
+  const [outputFormat, setOutputFormat] = useState('json');
 
   const generateUin = async () => {
     setLoading(true);
@@ -1674,6 +2120,7 @@ function App() {
   const copyRaw = () => copyToClipboard(result?.value);
   const copyPayload = () => copyToClipboard(JSON.stringify(payload, null, 2));
   const copyJwt = () => copyToClipboard(jwt);
+  const copyJsonLd = () => copyToClipboard(JSON.stringify(jsonLd, null, 2));
 
   // Separator presets
   const separatorPresets = [
@@ -1686,23 +2133,29 @@ function App() {
 
   return (
     <div className="App">
-      <div className="container-wide">
-        <header className="header">
-          <img
-            src={OSIA_LOGO_URL}
-            alt="OSIA Logo"
-            className="logo"
-            onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.nextSibling.style.display = 'block';
-            }}
-          />
-          <div className="logo-placeholder" style={{display: 'none'}}>
-            <h1>OSIA</h1>
+      <header className="header">
+        <div className="header-content">
+          <div className="header-brand">
+            <img
+              src={OSIA_LOGO_URL}
+              alt="OSIA Logo"
+              className="logo"
+              onError={(e) => {
+                e.target.style.display = 'none';
+              }}
+            />
+            <div className="header-titles">
+              <h1>UIN Generator <span className="version">v2.0</span></h1>
+              <p className="subtitle">Open Standards for Identity APIs</p>
+            </div>
           </div>
-          <h1>UIN Generator v2.0</h1>
-          <p className="subtitle">Open Standards for Identity APIs - PostgreSQL-Backed Pool&nbsp;Management</p>
-        </header>
+          <div className="header-actions">
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
+          </div>
+        </div>
+      </header>
+
+      <div className="main-container">
 
         <div className="tabs">
           <TabButton active={activeTab === 'generate'} onClick={() => setActiveTab('generate')}>
@@ -1723,6 +2176,7 @@ function App() {
         </div>
 
         {activeTab === 'generate' && (
+          <div className="tab-content" style={{padding: 0}}>
           <div className="generate-layout">
             {/* Left Panel - Generator */}
             <div className="generator-panel">
@@ -1943,25 +2397,92 @@ function App() {
                     </div>
                   </div>
 
-                  {/* JSON Payload */}
-                  <div className="output-card">
-                    <div className="output-header">
-                      <h3>JSON Payload</h3>
-                      <button onClick={copyPayload} className="btn-icon" title="Copy JSON">COPY</button>
+                  {/* Provenance Display */}
+                  {result.provenance && (
+                    <div className="output-card provenance-card">
+                      <div className="output-header">
+                        <h3>Entropy Provenance</h3>
+                        <span className={`provenance-indicator ${result.provenance.hardware ? 'hardware' : 'software'}`}>
+                          {result.provenance.hardware ? 'Hardware TRNG' : 'Software CSPRNG'}
+                        </span>
+                      </div>
+                      <div className="provenance-details">
+                        <div className="provenance-item">
+                          <span className="prov-label">Source</span>
+                          <span className="prov-value">{result.provenance.source}</span>
+                        </div>
+                        {result.provenance.provider && (
+                          <div className="provenance-item">
+                            <span className="prov-label">Provider</span>
+                            <span className="prov-value">{result.provenance.provider}</span>
+                          </div>
+                        )}
+                        {result.provenance.fipsLevel > 0 && (
+                          <div className="provenance-item">
+                            <span className="prov-label">FIPS Level</span>
+                            <span className="prov-value fips-badge">Level {result.provenance.fipsLevel}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <pre className="json-output">{JSON.stringify(payload, null, 2)}</pre>
-                  </div>
+                  )}
 
-                  {/* JWT */}
+                  {/* Output Format Tabs */}
                   <div className="output-card">
-                    <div className="output-header">
-                      <h3>JWT (RFC 7519)</h3>
-                      <button onClick={copyJwt} className="btn-icon" title="Copy JWT">COPY</button>
+                    <div className="output-format-tabs">
+                      <button
+                        className={`format-tab ${outputFormat === 'json' ? 'active' : ''}`}
+                        onClick={() => setOutputFormat('json')}
+                      >
+                        JSON
+                      </button>
+                      <button
+                        className={`format-tab ${outputFormat === 'jwt' ? 'active' : ''}`}
+                        onClick={() => setOutputFormat('jwt')}
+                      >
+                        JWT
+                      </button>
+                      <button
+                        className={`format-tab ${outputFormat === 'jsonld' ? 'active' : ''}`}
+                        onClick={() => setOutputFormat('jsonld')}
+                      >
+                        JSON-LD
+                      </button>
                     </div>
-                    <div className="jwt-output">
-                      <code className="jwt-token">{jwt}</code>
-                      <small className="jwt-note">Unsigned JWT (alg: none) - sign with your key for production</small>
-                    </div>
+
+                    {outputFormat === 'json' && (
+                      <div className="format-content">
+                        <div className="output-header">
+                          <h3>JSON Payload</h3>
+                          <button onClick={copyPayload} className="btn-icon" title="Copy JSON">COPY</button>
+                        </div>
+                        <pre className="json-output">{JSON.stringify(payload, null, 2)}</pre>
+                      </div>
+                    )}
+
+                    {outputFormat === 'jwt' && (
+                      <div className="format-content">
+                        <div className="output-header">
+                          <h3>JWT (RFC 7519)</h3>
+                          <button onClick={copyJwt} className="btn-icon" title="Copy JWT">COPY</button>
+                        </div>
+                        <div className="jwt-output">
+                          <code className="jwt-token">{jwt}</code>
+                          <small className="jwt-note">Unsigned JWT (alg: none) - sign with your key for production</small>
+                        </div>
+                      </div>
+                    )}
+
+                    {outputFormat === 'jsonld' && (
+                      <div className="format-content">
+                        <div className="output-header">
+                          <h3>JSON-LD (Linked Data)</h3>
+                          <button onClick={copyJsonLd} className="btn-icon" title="Copy JSON-LD">COPY</button>
+                        </div>
+                        <pre className="json-output jsonld-output">{JSON.stringify(jsonLd, null, 2)}</pre>
+                        <small className="jsonld-note">W3C JSON-LD format with OSIA vocabulary context</small>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -1973,26 +2494,31 @@ function App() {
               )}
             </div>
           </div>
+          </div>
         )}
 
         {activeTab === 'pool' && <PoolDashboard />}
         {activeTab === 'lookup' && <UinLookup />}
         {activeTab === 'security' && <SecurityStatus />}
         {activeTab === 'docs' && <Documentation />}
+      </div>
 
-        <footer className="footer">
+      <footer className="footer">
+        <div className="footer-content">
           <p>
-            <strong>OSIA UIN Generator v2.0</strong> |
-            Open Standards for Identity APIs |
+            <strong>OSIA UIN Generator v2.0</strong>
+            <span className="footer-sep">|</span>
+            Open Standards for Identity APIs
+            <span className="footer-sep">|</span>
             <a href="https://secureidentityalliance.org/osia" target="_blank" rel="noopener noreferrer">
               Learn More
             </a>
           </p>
-          <p className="note">
-            <small>API Server: {API_BASE_URL} | RFC 7519 JWT Support</small>
+          <p className="footer-note">
+            API Server: {API_BASE_URL}
           </p>
-        </footer>
-      </div>
+        </div>
+      </footer>
     </div>
   );
 }

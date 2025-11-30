@@ -66,6 +66,23 @@ module.exports = {
         UIN_ENABLE_CORS: 'true',
         UIN_CORS_ORIGIN: '*',
 
+        // HSM Configuration - Using remote YubiHSM on nv2 (192.168.0.16)
+        // Local YubiHSM on nv1 is under maintenance
+        HSM_ENABLED: 'true',
+        HSM_PROVIDER: 'yubihsm',
+        HSM_LIBRARY: '/usr/local/lib/pkcs11/yubihsm_pkcs11.so',
+        HSM_SLOT: '0',
+        HSM_PIN: '0001password',  // YubiHSM format: authkey + password
+        HSM_KEY_LABEL: 'osia-sector-key',
+        // Points to remote YubiHSM on nv2
+        YUBIHSM_PKCS11_CONF: '/etc/yubihsm_pkcs11.conf',
+
+        // HashiCorp Vault Configuration
+        VAULT_ENABLED: 'true',
+        VAULT_ADDR: process.env.VAULT_ADDR || 'https://nv1.pocket.one:8200',
+        VAULT_TOKEN: process.env.VAULT_TOKEN,
+        VAULT_SKIP_VERIFY: process.env.VAULT_SKIP_VERIFY || 'true',
+
         // Database configuration (PostgreSQL)
         OSIA_DB_HOST: process.env.PGHOST ,
         OSIA_DB_PORT: process.env.PGPORT || 5432,

@@ -423,6 +423,194 @@ app.get('/pool/stats', async (req, res) => {
 });
 
 /**
+ * GET /pool/peek - Peek at top UINs without claiming (for testing)
+ */
+app.get('/pool/peek', async (req, res) => {
+  try {
+    const { scope, status = 'AVAILABLE', limit = 10 } = req.query;
+    const { getDb } = await import('./db.mjs');
+    const db = getDb();
+
+    let query = db('uin_pool')
+      .where({ status: status.toUpperCase() })
+      .orderBy('iat', 'asc')
+      .limit(Math.min(parseInt(limit), 100));
+
+    if (scope) {
+      query = query.where({ scope });
+    }
+
+    const uins = await query.select('uin', 'mode', 'scope', 'status', 'iat', 'hash_rmd160', 'meta');
+
+    res.json({
+      success: true,
+      count: uins.length,
+      uins: uins.map(u => ({
+        uin: u.uin,
+        mode: u.mode,
+        scope: u.scope,
+        status: u.status,
+        created: u.iat,
+        hash: u.hash_rmd160,
+        provenance: u.meta?.provenance || null
+      })),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Pool peek error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * POST /pool/preassign - Pre-assign a UIN from the pool (UI-friendly)
+ */
+app.post('/pool/preassign', async (req, res) => {
+  try {
+    const { scope } = req.body;
+
+    const result = await claimUin({
+      scope: scope || null,
+      clientId: req.headers['x-client-id'] || 'UI_TEST'
+    });
+
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        error: 'No available UINs',
+        message: scope ? `No available UINs for scope: ${scope}` : 'No available UINs in pool'
+      });
+    }
+
+    res.json({
+      success: true,
+      uin: result.uin,
+      status: result.status,
+      message: 'UIN pre-assigned successfully'
+    });
+  } catch (error) {
+    console.error('Pool preassign error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /pool/assign - Assign a pre-assigned UIN (UI-friendly)
+ */
+app.post('/pool/assign', async (req, res) => {
+  try {
+    const { uin, entityId } = req.body;
+
+    if (!uin) {
+      return res.status(400).json({
+        success: false,
+        error: 'UIN is required'
+      });
+    }
+
+    const result = await assignUin({
+      uin,
+      assignedToRef: entityId || `entity-${Date.now()}`,
+      actorSystem: 'UI_TEST',
+      actorRef: `ui-assign-${Date.now()}`
+    });
+
+    res.json({
+      success: true,
+      uin: result.uin,
+      status: result.status,
+      entityId: result.assigned_to_ref,
+      message: 'UIN assigned successfully'
+    });
+  } catch (error) {
+    console.error('Pool assign error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /pool/revoke - Revoke an assigned UIN (UI-friendly)
+ */
+app.post('/pool/revoke', async (req, res) => {
+  try {
+    const { uin, reason } = req.body;
+
+    if (!uin) {
+      return res.status(400).json({
+        success: false,
+        error: 'UIN is required'
+      });
+    }
+
+    const result = await updateUinStatus({
+      uin,
+      newStatus: 'REVOKED',
+      reason: reason || 'Revoked via UI',
+      actorSystem: 'UI_TEST'
+    });
+
+    res.json({
+      success: true,
+      uin: result.uin,
+      status: result.status,
+      message: 'UIN revoked successfully'
+    });
+  } catch (error) {
+    console.error('Pool revoke error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /pool/retire - Retire a UIN (UI-friendly)
+ */
+app.post('/pool/retire', async (req, res) => {
+  try {
+    const { uin, reason } = req.body;
+
+    if (!uin) {
+      return res.status(400).json({
+        success: false,
+        error: 'UIN is required'
+      });
+    }
+
+    const result = await updateUinStatus({
+      uin,
+      newStatus: 'RETIRED',
+      reason: reason || 'Retired via UI',
+      actorSystem: 'UI_TEST'
+    });
+
+    res.json({
+      success: true,
+      uin: result.uin,
+      status: result.status,
+      message: 'UIN retired successfully'
+    });
+  } catch (error) {
+    console.error('Pool retire error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /uin/pre-generate - Pre-generate UINs into pool
  */
 app.post('/uin/pre-generate', async (req, res) => {
