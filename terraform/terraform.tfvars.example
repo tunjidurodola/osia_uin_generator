@@ -1,0 +1,38 @@
+# =============================================================================
+# OSIA UIN Generator - Terraform Variables Example
+# Copy to terraform.tfvars and fill in values
+# =============================================================================
+
+# Environment
+environment = "development"
+app_root    = "/scripts/dev/osia/uin-generator"
+
+# Deployment
+deploy_hosts = false
+cors_origin  = "*"
+log_level    = "info"
+
+# HashiCorp Vault
+enable_vault  = true
+vault_address = "http://127.0.0.1:8200"
+vault_token   = ""  # Use VAULT_TOKEN env var instead
+
+# HSM Configuration
+enable_hsm       = false
+hsm_provider     = "softhsm"
+hsm_library_path = "/usr/lib/softhsm/libsofthsm2.so"
+hsm_slot         = 0
+hsm_pin          = ""  # Use HSM_PIN env var instead
+hsm_key_label    = "osia-sector-key"
+
+# Database
+db_host     = "localhost"
+db_port     = 5432
+db_username = "osia_user"
+db_password = ""  # Use TF_VAR_db_password env var instead
+db_name     = "osia_dev"
+
+# Sector Secrets (use environment variables in production)
+# TF_VAR_sector_secret_health=<secret>
+# TF_VAR_sector_secret_tax=<secret>
+# etc.

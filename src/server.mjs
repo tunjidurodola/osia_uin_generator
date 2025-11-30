@@ -20,6 +20,12 @@ import {
   getPoolStats
 } from './poolService.mjs';
 import { testConnection } from './db.mjs';
+import {
+  initializeCryptoService,
+  getStatus as getCryptoStatus,
+  loadSecretsFromEnv,
+  setSectorSecrets
+} from './cryptoService.mjs';
 
 const app = express();
 
@@ -98,6 +104,7 @@ app.get('/', (req, res) => {
 app.get('/health', async (req, res) => {
   const config = getConfig();
   const dbConnected = await testConnection();
+  const cryptoStatus = getCryptoStatus();
 
   res.json({
     status: dbConnected ? 'healthy' : 'degraded',
@@ -105,11 +112,29 @@ app.get('/health', async (req, res) => {
     version: '2.0.0',
     timestamp: new Date().toISOString(),
     database: dbConnected ? 'connected' : 'disconnected',
+    crypto: {
+      hsm: cryptoStatus.hsm,
+      vault: cryptoStatus.vault,
+      secretsLoaded: cryptoStatus.secretsLoaded
+    },
     config: {
       defaultMode: config.defaultMode,
       defaultLength: config.defaultLength,
       supportedSectors: config.supportedSectors
     }
+  });
+});
+
+/**
+ * GET /crypto/status - Get cryptographic service status
+ */
+app.get('/crypto/status', (req, res) => {
+  const cryptoStatus = getCryptoStatus();
+
+  res.json({
+    success: true,
+    status: cryptoStatus,
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -748,28 +773,50 @@ async function startServer() {
     const port = config.serverPort;
     const host = config.serverHost;
 
+    // Initialize crypto service (HSM/Vault)
+    console.log('Initializing cryptographic services...');
+    const cryptoStatus = await initializeCryptoService({
+      vault: config.vault,
+      hsm: config.hsm
+    });
+
+    // Load secrets from environment if Vault didn't provide them
+    if (cryptoStatus.vault && !cryptoStatus.vault.authenticated) {
+      console.log('Loading sector secrets from environment...');
+      loadSecretsFromEnv();
+    }
+
+    // Fallback: use config secrets if nothing loaded
+    const finalCryptoStatus = getCryptoStatus();
+    if (finalCryptoStatus.secretsLoaded === 0) {
+      console.log('Using secrets from configuration...');
+      setSectorSecrets(config.sectorSecrets);
+    }
+
     // Test database connection
     const dbConnected = await testConnection();
     if (!dbConnected) {
-      console.warn('⚠ WARNING: Database connection failed. Pool management features will not work.');
+      console.warn('WARNING: Database connection failed. Pool management features will not work.');
     }
 
     app.listen(port, host, () => {
+      const finalStatus = getCryptoStatus();
       console.log(`
-╔════════════════════════════════════════════════════════════╗
-║                                                            ║
-║         OSIA UIN Generator API Server v2.0                ║
-║                                                            ║
-╚════════════════════════════════════════════════════════════╝
++------------------------------------------------------------+
+|                                                            |
+|         OSIA UIN Generator API Server v2.0                |
+|                                                            |
++------------------------------------------------------------+
 
 Server running at: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}
 
 Available endpoints:
   Information:
-    - GET  /           API information
-    - GET  /health     Health check
-    - GET  /modes      List generation modes
-    - GET  /sectors    List supported sectors
+    - GET  /              API information
+    - GET  /health        Health check
+    - GET  /modes         List generation modes
+    - GET  /sectors       List supported sectors
+    - GET  /crypto/status Cryptographic service status
 
   Generation (Stateless):
     - POST /generate   Generate a UIN
@@ -790,7 +837,10 @@ Available endpoints:
 Configuration:
   - Default mode: ${config.defaultMode}
   - Default length: ${config.defaultLength}
-  - Database: ${dbConnected ? '✓ Connected' : '✗ Disconnected'}
+  - Database: ${dbConnected ? 'Connected' : 'Disconnected'}
+  - HSM: ${finalStatus.hsm?.enabled ? `Enabled (${finalStatus.hsm.mode})` : 'Disabled'}
+  - Vault: ${finalStatus.vault?.enabled ? (finalStatus.vault.authenticated ? 'Authenticated' : 'Enabled') : 'Disabled'}
+  - Secrets loaded: ${finalStatus.secretsLoaded}
   - Supported sectors: ${config.supportedSectors.join(', ')}
 
 Press Ctrl+C to stop the server

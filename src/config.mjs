@@ -1,7 +1,11 @@
 /**
  * Configuration Module for UIN Generator
  * Loads configuration from environment variables with sensible defaults
+ * Supports HashiCorp Vault and HSM integration
  */
+
+import { isVaultEnabled, getVaultClient } from './vault.mjs';
+import { isHsmEnabled } from './hsm.mjs';
 
 /**
  * Default character sets
@@ -114,7 +118,26 @@ const DEFAULT_CONFIG = {
   corsOrigin: '*',  // For dev only; restrict in production
 
   // Logging
-  logLevel: 'info'
+  logLevel: 'info',
+
+  // Vault configuration
+  vault: {
+    enabled: false,
+    address: 'http://127.0.0.1:8200',
+    roleId: '',
+    secretId: '',
+    namespace: ''
+  },
+
+  // HSM configuration
+  hsm: {
+    enabled: false,
+    provider: 'softhsm',
+    library: '/usr/lib/softhsm/libsofthsm2.so',
+    slot: 0,
+    pin: '',
+    keyLabel: 'osia-sector-key'
+  }
 };
 
 /**
@@ -182,7 +205,27 @@ export function loadConfig() {
     corsOrigin: process.env.UIN_CORS_ORIGIN || DEFAULT_CONFIG.corsOrigin,
 
     // Logging
-    logLevel: process.env.LOG_LEVEL || process.env.UIN_LOG_LEVEL || DEFAULT_CONFIG.logLevel
+    logLevel: process.env.LOG_LEVEL || process.env.UIN_LOG_LEVEL || DEFAULT_CONFIG.logLevel,
+
+    // Vault configuration
+    vault: {
+      enabled: isVaultEnabled(),
+      address: process.env.VAULT_ADDR || DEFAULT_CONFIG.vault.address,
+      token: process.env.VAULT_TOKEN || '',
+      roleId: process.env.VAULT_ROLE_ID || DEFAULT_CONFIG.vault.roleId,
+      secretId: process.env.VAULT_SECRET_ID || DEFAULT_CONFIG.vault.secretId,
+      namespace: process.env.VAULT_NAMESPACE || DEFAULT_CONFIG.vault.namespace
+    },
+
+    // HSM configuration
+    hsm: {
+      enabled: isHsmEnabled(),
+      provider: process.env.HSM_PROVIDER || DEFAULT_CONFIG.hsm.provider,
+      library: process.env.HSM_LIBRARY || DEFAULT_CONFIG.hsm.library,
+      slot: parseInt(process.env.HSM_SLOT || DEFAULT_CONFIG.hsm.slot),
+      pin: process.env.HSM_PIN || DEFAULT_CONFIG.hsm.pin,
+      keyLabel: process.env.HSM_KEY_LABEL || DEFAULT_CONFIG.hsm.keyLabel
+    }
   };
 
   return config;

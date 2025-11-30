@@ -1020,6 +1020,223 @@ GET /health
   );
 }
 
+// Security/Crypto Status Component
+function SecurityStatus() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchStatus = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/crypto/status`);
+      const data = await response.json();
+      if (data.success) {
+        setStatus(data.status);
+      } else {
+        setError(data.error || 'Failed to fetch status');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  return (
+    <div className="tab-content">
+      <div className="section-card">
+        <div className="section-header">
+          <h2>Cryptographic Services Status</h2>
+          <button onClick={fetchStatus} disabled={loading} className="btn-secondary">
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+
+        {error && (
+          <div className="error-message">
+            <span className="error-icon">!</span>
+            {error}
+          </div>
+        )}
+
+        {status && (
+          <div className="security-grid">
+            {/* HSM Status Card */}
+            <div className={`security-card ${status.hsm?.enabled ? 'enabled' : 'disabled'}`}>
+              <div className="security-card-header">
+                <h3>HSM</h3>
+                <span className={`status-indicator ${status.hsm?.enabled ? 'active' : 'inactive'}`}>
+                  {status.hsm?.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+              <div className="security-card-body">
+                <div className="security-detail">
+                  <span className="label">Mode</span>
+                  <span className="value">{status.hsm?.mode || 'N/A'}</span>
+                </div>
+                <div className="security-detail">
+                  <span className="label">Provider</span>
+                  <span className="value">{status.hsm?.providerName || status.hsm?.provider || 'N/A'}</span>
+                </div>
+                <div className="security-detail">
+                  <span className="label">Initialized</span>
+                  <span className={`value ${status.hsm?.initialized ? 'yes' : 'no'}`}>
+                    {status.hsm?.initialized ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                {status.hsm?.slot !== undefined && (
+                  <div className="security-detail">
+                    <span className="label">Slot</span>
+                    <span className="value">{status.hsm?.slot}</span>
+                  </div>
+                )}
+                {status.hsm?.keyLabel && (
+                  <div className="security-detail">
+                    <span className="label">Key Label</span>
+                    <span className="value mono">{status.hsm?.keyLabel}</span>
+                  </div>
+                )}
+              </div>
+              <div className="security-card-footer">
+                {status.hsm?.mode === 'hardware' ? (
+                  <span className="security-badge hardware">Hardware Cryptography</span>
+                ) : (
+                  <span className="security-badge software">Software Fallback</span>
+                )}
+              </div>
+            </div>
+
+            {/* Vault Status Card */}
+            <div className={`security-card ${status.vault?.enabled ? 'enabled' : 'disabled'}`}>
+              <div className="security-card-header">
+                <h3>HashiCorp Vault</h3>
+                <span className={`status-indicator ${status.vault?.enabled ? 'active' : 'inactive'}`}>
+                  {status.vault?.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+              <div className="security-card-body">
+                <div className="security-detail">
+                  <span className="label">Authenticated</span>
+                  <span className={`value ${status.vault?.authenticated ? 'yes' : 'no'}`}>
+                    {status.vault?.authenticated ? 'Yes' : 'No'}
+                  </span>
+                </div>
+                {status.vault?.address && (
+                  <div className="security-detail">
+                    <span className="label">Address</span>
+                    <span className="value mono">{status.vault?.address}</span>
+                  </div>
+                )}
+              </div>
+              <div className="security-card-footer">
+                {status.vault?.authenticated ? (
+                  <span className="security-badge connected">Connected</span>
+                ) : status.vault?.enabled ? (
+                  <span className="security-badge warning">Not Authenticated</span>
+                ) : (
+                  <span className="security-badge disabled">Disabled</span>
+                )}
+              </div>
+            </div>
+
+            {/* Secrets Status Card */}
+            <div className={`security-card ${status.secretsLoaded > 0 ? 'enabled' : 'disabled'}`}>
+              <div className="security-card-header">
+                <h3>Sector Secrets</h3>
+                <span className={`status-indicator ${status.secretsLoaded > 0 ? 'active' : 'inactive'}`}>
+                  {status.secretsLoaded > 0 ? 'Loaded' : 'Not Loaded'}
+                </span>
+              </div>
+              <div className="security-card-body">
+                <div className="security-detail">
+                  <span className="label">Secrets Count</span>
+                  <span className="value">{status.secretsLoaded || 0}</span>
+                </div>
+                <div className="security-detail">
+                  <span className="label">Source</span>
+                  <span className="value">
+                    {status.vault?.authenticated ? 'Vault' : 'Environment'}
+                  </span>
+                </div>
+              </div>
+              <div className="security-card-footer">
+                {status.secretsLoaded >= 8 ? (
+                  <span className="security-badge success">All Sectors Configured</span>
+                ) : status.secretsLoaded > 0 ? (
+                  <span className="security-badge warning">Partial Configuration</span>
+                ) : (
+                  <span className="security-badge error">No Secrets Loaded</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!status && !loading && !error && (
+          <div className="empty-state">
+            <p>Click "Refresh" to load security status</p>
+          </div>
+        )}
+      </div>
+
+      {/* HSM Providers Info */}
+      <div className="section-card">
+        <div className="section-header">
+          <h2>Supported HSM Providers</h2>
+        </div>
+        <div className="providers-grid">
+          {[
+            { name: 'SoftHSM', desc: 'Software-based HSM for development and testing', icon: 'S' },
+            { name: 'Thales Luna', desc: 'Enterprise-grade network HSM', icon: 'T' },
+            { name: 'AWS CloudHSM', desc: 'Cloud-based HSM in AWS', icon: 'A' },
+            { name: 'YubiHSM', desc: 'Compact USB HSM device', icon: 'Y' },
+            { name: 'Azure Key Vault', desc: 'Azure managed HSM service', icon: 'Z' },
+          ].map(p => (
+            <div key={p.name} className="provider-card">
+              <div className="provider-icon">{p.icon}</div>
+              <div className="provider-info">
+                <h4>{p.name}</h4>
+                <p>{p.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Configuration Guide */}
+      <div className="section-card">
+        <div className="section-header">
+          <h2>Configuration</h2>
+        </div>
+        <div className="config-guide">
+          <h4>Environment Variables</h4>
+          <pre className="code-block">{`# HashiCorp Vault
+VAULT_ENABLED=true
+VAULT_ADDR=http://127.0.0.1:8200
+VAULT_TOKEN=<token>
+# Or use AppRole
+VAULT_ROLE_ID=<role_id>
+VAULT_SECRET_ID=<secret_id>
+
+# HSM Configuration
+HSM_ENABLED=true
+HSM_PROVIDER=softhsm|thales|aws-cloudhsm|yubihsm
+HSM_LIBRARY=/path/to/pkcs11/library.so
+HSM_SLOT=0
+HSM_PIN=<pin>
+HSM_KEY_LABEL=osia-sector-key`}</pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // UIN Lookup Component
 function UinLookup() {
   const [uin, setUin] = useState('');
@@ -1454,6 +1671,9 @@ function App() {
           <TabButton active={activeTab === 'lookup'} onClick={() => setActiveTab('lookup')}>
             UIN Lookup
           </TabButton>
+          <TabButton active={activeTab === 'security'} onClick={() => setActiveTab('security')}>
+            Security
+          </TabButton>
           <TabButton active={activeTab === 'docs'} onClick={() => setActiveTab('docs')}>
             Documentation
           </TabButton>
@@ -1714,6 +1934,7 @@ function App() {
 
         {activeTab === 'pool' && <PoolDashboard />}
         {activeTab === 'lookup' && <UinLookup />}
+        {activeTab === 'security' && <SecurityStatus />}
         {activeTab === 'docs' && <Documentation />}
 
         <footer className="footer">
