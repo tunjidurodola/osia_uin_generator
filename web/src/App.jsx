@@ -358,15 +358,30 @@ function UinLifecycleOperations({ onStatusChange }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [peekList, setPeekList] = useState([]);
+  const [fetchedUin, setFetchedUin] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   const operations = [
-    { id: 'fetch', label: 'Fetch', desc: 'View top UINs in pool', method: 'GET', endpoint: '/pool/peek' },
-    { id: 'preassign', label: 'Pre-assign', desc: 'Reserve a UIN from pool', method: 'POST', endpoint: '/pool/preassign' },
-    { id: 'assign', label: 'Assign', desc: 'Assign UIN to entity', method: 'POST', endpoint: '/pool/assign' },
-    { id: 'revoke', label: 'Revoke', desc: 'Revoke an assigned UIN', method: 'POST', endpoint: '/pool/revoke' },
-    { id: 'retire', label: 'Retire', desc: 'Permanently retire a UIN', method: 'POST', endpoint: '/pool/retire' },
+    { id: 'fetch', label: 'Fetch', desc: 'Get 1 UIN from pool', method: 'GET', endpoint: '/pool/peek' },
+    { id: 'preassign', label: 'Pre-assign', desc: 'Reserve the UIN', method: 'POST', endpoint: '/pool/preassign' },
+    { id: 'assign', label: 'Assign', desc: 'Assign to entity', method: 'POST', endpoint: '/pool/assign' },
+    { id: 'revoke', label: 'Revoke', desc: 'Revoke UIN', method: 'POST', endpoint: '/pool/revoke' },
+    { id: 'retire', label: 'Retire', desc: 'Retire UIN', method: 'POST', endpoint: '/pool/retire' },
   ];
+
+  const copyUin = () => {
+    if (fetchedUin?.uin) {
+      navigator.clipboard.writeText(fetchedUin.uin);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const useUin = () => {
+    if (fetchedUin?.uin) {
+      setUinInput(fetchedUin.uin);
+    }
+  };
 
   const executeOperation = async () => {
     setLoading(true);
@@ -377,14 +392,14 @@ function UinLifecycleOperations({ onStatusChange }) {
 
     try {
       if (activeOp === 'fetch') {
-        // Fetch top UINs from pool (peek without claiming)
-        const response = await fetch(`${API_BASE_URL}${op.endpoint}?status=AVAILABLE&limit=10`);
+        // Fetch 1 UIN from pool (peek without claiming)
+        const response = await fetch(`${API_BASE_URL}${op.endpoint}?status=AVAILABLE&limit=1`);
         const data = await response.json();
-        if (data.success) {
-          setPeekList(data.uins || []);
-          setResult({ message: `Found ${data.uins?.length || 0} available UINs`, count: data.uins?.length || 0 });
+        if (data.success && data.uins?.length > 0) {
+          setFetchedUin(data.uins[0]);
+          setResult({ message: 'UIN fetched from pool', uin: data.uins[0].uin });
         } else {
-          setError(data.error || 'Failed to fetch UINs');
+          setError(data.error || 'No available UINs in pool');
         }
       } else {
         let body = {};
@@ -408,7 +423,11 @@ function UinLifecycleOperations({ onStatusChange }) {
 
         if (data.success) {
           setResult(data);
-          if (data.uin) setUinInput(data.uin);
+          if (data.uin) {
+            setUinInput(data.uin);
+            // Also update fetchedUin for display
+            setFetchedUin({ uin: data.uin, status: data.status });
+          }
           if (onStatusChange) onStatusChange();
         } else {
           setError(data.error || `${op.label} operation failed`);
@@ -442,17 +461,50 @@ function UinLifecycleOperations({ onStatusChange }) {
         ))}
       </div>
 
+      {/* Current UIN Display - Always visible when we have a UIN */}
+      {fetchedUin && (
+        <div className="current-uin-display">
+          <div className="current-uin-header">
+            <span className="current-uin-label">Current UIN</span>
+            {fetchedUin.status && (
+              <span className={`status-pill status-${fetchedUin.status?.toLowerCase()}`}>{fetchedUin.status}</span>
+            )}
+          </div>
+          <div className="current-uin-value">
+            <code>{fetchedUin.uin}</code>
+            <div className="current-uin-actions">
+              <button onClick={copyUin} className="btn-copy" title="Copy to clipboard">
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+              <button onClick={useUin} className="btn-use-uin" title="Use in operations">
+                Use
+              </button>
+            </div>
+          </div>
+          {fetchedUin.scope && (
+            <div className="current-uin-meta">
+              <span>Scope: {fetchedUin.scope}</span>
+              {fetchedUin.provenance && (
+                <span className={`provenance-tag ${fetchedUin.provenance.hardware ? 'hardware' : 'software'}`}>
+                  {fetchedUin.provenance.hardware ? 'HSM TRNG' : 'CSPRNG'}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Operation Form */}
       <div className="operation-form">
         {activeOp === 'fetch' && (
           <div className="form-hint">
-            <p>Peek at the top available UINs in the pool without claiming them. Use this to see what's available and select a UIN for testing lifecycle operations.</p>
+            <p>Fetch a single available UIN from the pool to view and copy. This does not claim or reserve the UIN.</p>
           </div>
         )}
 
         {activeOp === 'preassign' && (
           <div className="form-hint">
-            <p>Click the button to pre-assign an available UIN from the pool. The UIN will be reserved but not yet assigned to an entity.</p>
+            <p>Pre-assign reserves an available UIN from the pool. The UIN changes from AVAILABLE to PREASSIGNED status.</p>
           </div>
         )}
 
@@ -463,12 +515,12 @@ function UinLifecycleOperations({ onStatusChange }) {
               type="text"
               value={uinInput}
               onChange={(e) => setUinInput(e.target.value.toUpperCase())}
-              placeholder="Enter UIN (e.g., A1B2C3D4E5F6G7H8I9)"
+              placeholder="Enter UIN or click 'Use' above"
               className="input-text mono"
             />
             <small className="help-text">
-              {activeOp === 'assign' ? 'Enter a pre-assigned UIN to assign to an entity' :
-               activeOp === 'revoke' ? 'Enter an assigned UIN to revoke' :
+              {activeOp === 'assign' ? 'Enter a PREASSIGNED UIN to assign to an entity' :
+               activeOp === 'revoke' ? 'Enter an ASSIGNED UIN to revoke' :
                'Enter a UIN to permanently retire'}
             </small>
           </div>
@@ -481,10 +533,10 @@ function UinLifecycleOperations({ onStatusChange }) {
               type="text"
               value={entityId}
               onChange={(e) => setEntityId(e.target.value)}
-              placeholder="Entity identifier (optional, auto-generated if empty)"
+              placeholder="Entity identifier (optional)"
               className="input-text"
             />
-            <small className="help-text">The identifier of the entity this UIN will be assigned to</small>
+            <small className="help-text">External reference for this UIN assignment</small>
           </div>
         )}
 
@@ -508,46 +560,15 @@ function UinLifecycleOperations({ onStatusChange }) {
             disabled={loading || ((activeOp !== 'preassign' && activeOp !== 'fetch') && !uinInput)}
             className={`btn-primary btn-large ${activeOp === 'revoke' ? 'btn-warning' : ''} ${activeOp === 'retire' ? 'btn-danger' : ''}`}
           >
-            {loading ? 'Processing...' : activeOp === 'fetch' ? 'Fetch Top UINs' : `Execute ${operations.find(o => o.id === activeOp)?.label}`}
+            {loading ? 'Processing...' :
+              activeOp === 'fetch' ? 'Fetch UIN' :
+              activeOp === 'preassign' ? 'Pre-assign UIN' :
+              `${operations.find(o => o.id === activeOp)?.label} UIN`}
           </button>
         </div>
 
-        {/* Peek List Display for Fetch operation */}
-        {activeOp === 'fetch' && peekList.length > 0 && (
-          <div className="peek-list">
-            <div className="peek-header">
-              <h4>Top Available UINs</h4>
-              <span className="peek-count">{peekList.length} UINs</span>
-            </div>
-            <div className="peek-items">
-              {peekList.map((item, index) => (
-                <div key={item.uin} className="peek-item" onClick={() => setUinInput(item.uin)}>
-                  <span className="peek-index">#{index + 1}</span>
-                  <code className="peek-uin">{item.uin}</code>
-                  <div className="peek-meta">
-                    <span className="peek-scope">{item.scope}</span>
-                    <span className="peek-time">{new Date(item.iat).toLocaleDateString()}</span>
-                    {item.meta?.provenance && (
-                      <span className={`peek-provenance ${item.meta.provenance.hardware ? 'hardware' : 'software'}`}>
-                        {item.meta.provenance.hardware ? 'HSM TRNG' : 'CSPRNG'}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    className="btn-use"
-                    onClick={(e) => { e.stopPropagation(); setUinInput(item.uin); setActiveOp('preassign'); }}
-                    title="Use this UIN"
-                  >
-                    Use
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Result Display */}
-        {result && activeOp !== 'fetch' && (
+        {result && (
           <div className="operation-result success">
             <div className="result-header">
               <span className="result-icon">✓</span>

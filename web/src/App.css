@@ -1914,111 +1914,99 @@ code.result-value {
 }
 
 /* ==========================================================================
-   PEEK LIST - Pool UIN Preview
+   CURRENT UIN DISPLAY - Single UIN with copy/use actions
    ========================================================================== */
 
-.peek-list {
-  margin-top: 1.5rem;
-  border: 1px solid var(--border-color);
+.current-uin-display {
+  margin: 1rem 0 1.5rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  color: white;
 }
 
-.peek-header {
+.current-uin-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.25rem;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.75rem;
 }
 
-.peek-header h4 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
+.current-uin-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.8;
 }
 
-.peek-count {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  background: var(--bg-page);
+.current-uin-header .status-pill {
+  font-size: 0.75rem;
   padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
 }
 
-.peek-items {
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.peek-item {
+.current-uin-value {
   display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--border-color);
-  cursor: pointer;
-  transition: background 0.2s;
+  margin-bottom: 0.75rem;
 }
 
-.peek-item:hover {
-  background: var(--bg-page);
-}
-
-.peek-item:last-child {
-  border-bottom: none;
-}
-
-.peek-index {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  min-width: 2rem;
-}
-
-.peek-uin {
+.current-uin-value code {
   font-family: var(--font-mono);
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--primary);
-  background: transparent;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  background: rgba(255,255,255,0.15);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
   flex: 1;
-  letter-spacing: 0.5px;
 }
 
-.peek-meta {
+.current-uin-actions {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.75rem;
+  gap: 0.5rem;
 }
 
-.peek-scope {
-  color: var(--text-muted);
-  text-transform: capitalize;
+.btn-copy, .btn-use-uin {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: 2px solid rgba(255,255,255,0.5);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+  color: white;
 }
 
-.peek-time {
-  color: var(--text-muted);
+.btn-copy:hover, .btn-use-uin:hover {
+  background: white;
+  color: var(--primary);
+  border-color: white;
 }
 
-.peek-provenance {
+.current-uin-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8125rem;
+  opacity: 0.9;
+}
+
+.provenance-tag {
   padding: 0.125rem 0.5rem;
   border-radius: 9999px;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
 }
 
-.peek-provenance.hardware {
-  background: var(--success-light);
-  color: var(--success);
+.provenance-tag.hardware {
+  background: var(--success);
 }
 
-.peek-provenance.software {
-  background: var(--info-light);
-  color: var(--info);
+.provenance-tag.software {
+  background: rgba(255,255,255,0.3);
 }
 
 .btn-use {
