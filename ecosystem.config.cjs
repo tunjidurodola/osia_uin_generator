@@ -67,10 +67,10 @@ module.exports = {
         UIN_CORS_ORIGIN: '*',
 
         // Database configuration (PostgreSQL)
-        OSIA_DB_HOST: process.env.PGHOST || 'db.pocket.one',
+        OSIA_DB_HOST: process.env.PGHOST ,
         OSIA_DB_PORT: process.env.PGPORT || 5432,
-        OSIA_DB_USER: process.env.PGUSER || 'qm4sfgp38xasdyl3sy',
-        OSIA_DB_PASSWORD: process.env.PGPASSWORD || 'PibeJSoNPDPX3pRDrs',
+        OSIA_DB_USER: process.env.PGUSER ,
+        OSIA_DB_PASSWORD: process.env.PGPASSWORD ,
         OSIA_DB_NAME: 'osia_dev',
 
         // Logging
