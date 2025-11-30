@@ -26,6 +26,19 @@ import {
   loadSecretsFromEnv,
   setSectorSecrets
 } from './cryptoService.mjs';
+import {
+  getFormats,
+  getFormat,
+  formatUin,
+  formatUinFromDb,
+  createFormat,
+  updateFormat,
+  deleteFormat,
+  setFormatOverride,
+  removeFormatOverride,
+  previewFormat,
+  applyFormat
+} from './formatService.mjs';
 
 const app = express();
 
@@ -137,6 +150,258 @@ app.get('/crypto/status', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// ============================================================================
+// FORMAT MANAGEMENT ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /formats - List all UIN display format configurations
+ */
+app.get('/formats', async (req, res) => {
+  try {
+    const formats = await getFormats();
+    res.json({
+      success: true,
+      formats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get formats error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * GET /formats/:id - Get a specific format by ID or code
+ */
+app.get('/formats/:idOrCode', async (req, res) => {
+  try {
+    const { idOrCode } = req.params;
+    const id = parseInt(idOrCode);
+    const format = await getFormat(isNaN(id) ? idOrCode : id);
+
+    if (!format) {
+      return res.status(404).json({
+        success: false,
+        error: 'Format not found',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      success: true,
+      format,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get format error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * POST /formats - Create a new format configuration
+ */
+app.post('/formats', async (req, res) => {
+  try {
+    const config = req.body;
+
+    if (!config.format_code || !config.name || !config.segment_lengths || !config.total_length) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: format_code, name, segment_lengths, total_length',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const format = await createFormat(config);
+    res.status(201).json({
+      success: true,
+      format,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Create format error:', error);
+    const statusCode = error.message.includes('duplicate') ? 409 : 500;
+    res.status(statusCode).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * PUT /formats/:id - Update a format configuration
+ */
+app.put('/formats/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const format = await updateFormat(parseInt(id), updates);
+
+    if (!format) {
+      return res.status(404).json({
+        success: false,
+        error: 'Format not found',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      success: true,
+      format,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Update format error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * DELETE /formats/:id - Delete a format configuration
+ */
+app.delete('/formats/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await deleteFormat(parseInt(id));
+
+    if (!deleted) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete format (either not found or is the default format)',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Format deleted successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Delete format error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * POST /formats/preview - Preview how a UIN would look with a format
+ */
+app.post('/formats/preview', async (req, res) => {
+  try {
+    const { uin, format_id, format_code } = req.body;
+
+    if (!uin) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: uin',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    let formatted;
+    if (format_id || format_code) {
+      formatted = await previewFormat(uin, format_id || format_code);
+    } else {
+      // Use auto-detection
+      const result = await formatUinFromDb(uin);
+      formatted = result.formatted;
+    }
+
+    res.json({
+      success: true,
+      raw: uin,
+      formatted,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Preview format error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * POST /uin/:uin/format - Set format override for a specific UIN
+ */
+app.post('/uin/:uin/format', async (req, res) => {
+  try {
+    const { uin } = req.params;
+    const { format_id } = req.body;
+
+    if (!format_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: format_id',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const override = await setFormatOverride(uin, format_id);
+    res.json({
+      success: true,
+      override,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Set format override error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * DELETE /uin/:uin/format - Remove format override for a UIN
+ */
+app.delete('/uin/:uin/format', async (req, res) => {
+  try {
+    const { uin } = req.params;
+    const removed = await removeFormatOverride(uin);
+
+    res.json({
+      success: true,
+      removed,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Remove format override error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// ============================================================================
+// GENERATION MODE ENDPOINTS
+// ============================================================================
 
 /**
  * GET /modes - List available generation modes
@@ -363,10 +628,15 @@ app.post('/validate', async (req, res) => {
 
 /**
  * POST /batch - Batch generate multiple UINs (stateless)
+ *
+ * Formatting behavior:
+ * - If count <= 10 and format is specified: apply formatting to each UIN
+ * - If count > 10 and format is specified: append format_metadata section
+ * - This prevents performance issues when formatting hundreds of UINs
  */
 app.post('/batch', async (req, res) => {
   try {
-    const { count = 1, options = {} } = req.body;
+    const { count = 1, options = {}, format_id, format_code } = req.body;
 
     if (count < 1 || count > 1000) {
       return res.status(400).json({
@@ -380,12 +650,45 @@ app.post('/batch', async (req, res) => {
       results.push(generateUin(options));
     }
 
-    res.json({
+    // Determine format configuration if requested
+    let formatConfig = null;
+    if (format_id || format_code) {
+      formatConfig = await getFormat(format_id || format_code);
+    }
+
+    // Apply formatting based on count threshold
+    const INLINE_FORMAT_THRESHOLD = 10;
+
+    if (formatConfig && count <= INLINE_FORMAT_THRESHOLD) {
+      // For small batches, apply formatting inline
+      for (const result of results) {
+        result.uin_formatted = applyFormat(result.value, formatConfig);
+        result.format_code = formatConfig.format_code;
+      }
+    }
+
+    const response = {
       success: true,
       count: results.length,
       results: results,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // For large batches with format, append metadata section
+    if (formatConfig && count > INLINE_FORMAT_THRESHOLD) {
+      response.format_metadata = {
+        format_code: formatConfig.format_code,
+        format_name: formatConfig.name,
+        separator: formatConfig.separator,
+        segment_lengths: formatConfig.segment_lengths,
+        display_case: formatConfig.display_case || 'upper',
+        prefix: formatConfig.prefix || null,
+        suffix: formatConfig.suffix || null,
+        note: `Formatting not applied inline due to batch size (${count} > ${INLINE_FORMAT_THRESHOLD}). Use format_metadata to format UINs in your system.`
+      };
+    }
+
+    res.json(response);
   } catch (error) {
     console.error('Batch generation error:', error);
 
@@ -442,18 +745,25 @@ app.get('/pool/peek', async (req, res) => {
 
     const uins = await query.select('uin', 'mode', 'scope', 'status', 'iat', 'hash_rmd160', 'meta');
 
-    res.json({
-      success: true,
-      count: uins.length,
-      uins: uins.map(u => ({
+    // Format each UIN for display
+    const formattedUins = await Promise.all(uins.map(async (u) => {
+      const formatted = await formatUin(u.uin, u.scope, u.mode);
+      return {
         uin: u.uin,
+        uin_formatted: formatted,
         mode: u.mode,
         scope: u.scope,
         status: u.status,
         created: u.iat,
         hash: u.hash_rmd160,
         provenance: u.meta?.provenance || null
-      })),
+      };
+    }));
+
+    res.json({
+      success: true,
+      count: formattedUins.length,
+      uins: formattedUins,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -615,7 +925,7 @@ app.post('/pool/retire', async (req, res) => {
  */
 app.post('/uin/pre-generate', async (req, res) => {
   try {
-    const { count, mode, scope, options = {} } = req.body;
+    const { count, mode, scope, options = {}, format_id, format_code } = req.body;
 
     if (!count) {
       return res.status(400).json({
@@ -642,7 +952,9 @@ app.post('/uin/pre-generate', async (req, res) => {
       count,
       mode,
       scope: scope || mode,
-      options
+      options,
+      formatId: format_id || null,
+      formatCode: format_code || null
     });
 
     res.json({
@@ -883,6 +1195,11 @@ app.get('/uin/:uin', async (req, res) => {
         timestamp: new Date().toISOString()
       });
     }
+
+    // Add formatted UIN to result
+    const formatInfo = await formatUinFromDb(uin);
+    result.uin_formatted = formatInfo.formatted;
+    result.format_code = formatInfo.format_code;
 
     res.json({
       success: true,

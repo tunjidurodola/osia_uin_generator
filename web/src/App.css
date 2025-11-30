@@ -53,6 +53,12 @@
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
   --text-muted: var(--gray-400);
+
+  /* Dark mode versions of light status backgrounds */
+  --success-light: rgba(56, 161, 105, 0.2);
+  --warning-light: rgba(236, 201, 75, 0.2);
+  --error-light: rgba(229, 62, 62, 0.2);
+  --info-light: rgba(66, 153, 225, 0.2);
 }
 
 /* Reset */
@@ -414,7 +420,7 @@ body {
   color: var(--success);
   background: var(--success-light);
   padding: 0.5rem 1rem;
-  border-radius: 20px;
+  border-radius: 4px;
 }
 
 /* Separator Config */
@@ -436,7 +442,7 @@ body {
   color: var(--text-secondary);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 20px;
+  border-radius: 4px;
   cursor: pointer;
 }
 
@@ -1050,7 +1056,7 @@ body {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
-  border-radius: 20px;
+  border-radius: 4px;
 }
 
 .status-available { background: var(--success-light); color: var(--success); }
@@ -1058,6 +1064,91 @@ body {
 .status-assigned { background: rgba(94, 23, 235, 0.15); color: var(--primary); }
 .status-retired { background: var(--gray-200); color: var(--gray-600); }
 .status-revoked { background: var(--error-light); color: var(--error); }
+
+[data-theme="dark"] .status-available { color: #68d391; }
+[data-theme="dark"] .status-preassigned { color: #63b3ed; }
+[data-theme="dark"] .status-assigned { color: #a78bfa; }
+[data-theme="dark"] .status-retired { background: var(--gray-700); color: var(--gray-400); }
+[data-theme="dark"] .status-revoked { color: #fc8181; }
+
+/* UIN Formatted Display */
+.uin-formatted {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+}
+
+.current-uin-raw {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.current-uin-raw .raw-label {
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.current-uin-raw .uin-raw {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--gray-500);
+  background: var(--gray-100);
+  padding: 0.125rem 0.375rem;
+  border-radius: 3px;
+}
+
+/* Format Documentation Example */
+.format-example {
+  background: var(--gray-50);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+.format-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.format-row:last-child {
+  margin-bottom: 0;
+}
+
+.format-label {
+  font-weight: 500;
+  color: var(--text-muted);
+  min-width: 100px;
+}
+
+.format-example .uin-raw {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--gray-600);
+  background: var(--gray-200);
+  padding: 0.375rem 0.75rem;
+  border-radius: 4px;
+}
+
+.format-example .uin-formatted {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(94, 23, 235, 0.1);
+  padding: 0.375rem 0.75rem;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
 
 /* Timeline */
 .timeline {
@@ -1129,7 +1220,7 @@ body {
   color: var(--text-muted);
   background: var(--bg-page);
   padding: 0.25rem 1rem;
-  border-radius: 20px;
+  border-radius: 4px;
 }
 
 /* ==========================================================================
@@ -1190,7 +1281,7 @@ body {
   padding: 0.5rem 1rem;
   font-size: 0.75rem;
   font-weight: 600;
-  border-radius: 20px;
+  border-radius: 4px;
   text-transform: uppercase;
 }
 
@@ -1352,6 +1443,11 @@ body {
   border: 1px solid var(--success);
 }
 
+[data-theme="dark"] .priority-item.primary {
+  background: rgba(56, 161, 105, 0.2);
+  border-color: var(--success);
+}
+
 .priority-item.fallback {
   background: var(--bg-page);
   border: 1px solid var(--border-color);
@@ -1381,10 +1477,18 @@ body {
   margin-bottom: 0.25rem;
 }
 
+[data-theme="dark"] .priority-content strong {
+  color: #e2e8f0;
+}
+
 .priority-content p {
   font-size: 0.875rem;
   color: var(--text-secondary);
   margin: 0;
+}
+
+[data-theme="dark"] .priority-content p {
+  color: #a0aec0;
 }
 
 /* ==========================================================================
@@ -1560,7 +1664,7 @@ body {
   font-weight: 600;
   background: rgba(94, 23, 235, 0.1);
   color: var(--primary);
-  border-radius: 20px;
+  border-radius: 4px;
 }
 
 .doc-table {
@@ -1623,6 +1727,11 @@ body {
   overflow-x: auto;
 }
 
+[data-theme="dark"] .mermaid-diagram {
+  background: linear-gradient(135deg, #1e1b4b, #312e81);
+  border-color: #6366f1;
+}
+
 .diagram-title {
   font-size: 0.8125rem;
   font-weight: 600;
@@ -1632,6 +1741,11 @@ body {
   margin-bottom: 1.25rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid rgba(135, 206, 235, 0.3);
+}
+
+[data-theme="dark"] .diagram-title {
+  color: #a5b4fc;
+  border-bottom-color: rgba(165, 180, 252, 0.3);
 }
 
 .diagram-content {
@@ -1644,6 +1758,208 @@ body {
 .diagram-content svg {
   max-width: 100%;
   height: auto;
+}
+
+/* Force dark mode colors in Mermaid SVG */
+
+/* General text - make all text light colored */
+[data-theme="dark"] .diagram-content svg text {
+  fill: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .diagram-content svg tspan {
+  fill: #e2e8f0 !important;
+}
+
+/* Sequence diagram specific elements */
+[data-theme="dark"] .diagram-content svg .messageText {
+  fill: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .sequenceNumber {
+  fill: #1e1b4b !important;
+}
+
+/* Note boxes in sequence diagrams - dark background with light text */
+[data-theme="dark"] .diagram-content svg .note {
+  fill: #4c1d95 !important;
+  stroke: #8b5cf6 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .noteText,
+[data-theme="dark"] .diagram-content svg .noteText tspan {
+  fill: #f5f3ff !important;
+}
+
+/* Actor boxes */
+[data-theme="dark"] .diagram-content svg .actor {
+  fill: #312e81 !important;
+  stroke: #8b5cf6 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .actor-man circle,
+[data-theme="dark"] .diagram-content svg .actor-man line {
+  fill: #312e81 !important;
+  stroke: #a5b4fc !important;
+}
+
+/* Actor text */
+[data-theme="dark"] .diagram-content svg text.actor {
+  fill: #e2e8f0 !important;
+}
+
+/* Actor lifeline */
+[data-theme="dark"] .diagram-content svg .actor-line {
+  stroke: #6366f1 !important;
+}
+
+/* Activation boxes */
+[data-theme="dark"] .diagram-content svg .activation0,
+[data-theme="dark"] .diagram-content svg .activation1,
+[data-theme="dark"] .diagram-content svg .activation2 {
+  fill: #4c1d95 !important;
+  stroke: #8b5cf6 !important;
+}
+
+/* Loop/alt boxes */
+[data-theme="dark"] .diagram-content svg .loopText,
+[data-theme="dark"] .diagram-content svg .loopText tspan {
+  fill: #c4b5fd !important;
+}
+
+[data-theme="dark"] .diagram-content svg .loopLine {
+  stroke: #6366f1 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .labelBox {
+  fill: #1e293b !important;
+  stroke: #6366f1 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .labelText,
+[data-theme="dark"] .diagram-content svg .labelText tspan {
+  fill: #c4b5fd !important;
+}
+
+/* Message lines and arrows */
+[data-theme="dark"] .diagram-content svg .messageLine0,
+[data-theme="dark"] .diagram-content svg .messageLine1 {
+  stroke: #a5b4fc !important;
+}
+
+[data-theme="dark"] .diagram-content svg .arrowheadPath {
+  fill: #a5b4fc !important;
+  stroke: #a5b4fc !important;
+}
+
+[data-theme="dark"] .diagram-content svg #arrowhead path {
+  fill: #a5b4fc !important;
+  stroke: #a5b4fc !important;
+}
+
+[data-theme="dark"] .diagram-content svg marker path {
+  fill: #a5b4fc !important;
+  stroke: #a5b4fc !important;
+}
+
+/* Flowchart elements */
+[data-theme="dark"] .diagram-content svg .node rect,
+[data-theme="dark"] .diagram-content svg .node circle,
+[data-theme="dark"] .diagram-content svg .node ellipse,
+[data-theme="dark"] .diagram-content svg .node polygon,
+[data-theme="dark"] .diagram-content svg .node path {
+  fill: #312e81 !important;
+  stroke: #8b5cf6 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .nodeLabel,
+[data-theme="dark"] .diagram-content svg .label {
+  fill: #e2e8f0 !important;
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .edgeLabel {
+  fill: #e2e8f0 !important;
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .edgeLabel rect {
+  fill: #1e1b4b !important;
+}
+
+[data-theme="dark"] .diagram-content svg .edgePath path {
+  stroke: #8b5cf6 !important;
+}
+
+/* Cluster/subgraph backgrounds */
+[data-theme="dark"] .diagram-content svg .cluster rect {
+  fill: #1e1b4b !important;
+  stroke: #6366f1 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .cluster text {
+  fill: #c4b5fd !important;
+}
+
+/* State diagram elements */
+[data-theme="dark"] .diagram-content svg .stateGroup rect {
+  fill: #312e81 !important;
+  stroke: #8b5cf6 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .stateGroup text {
+  fill: #e2e8f0 !important;
+}
+
+/* Gantt chart elements */
+[data-theme="dark"] .diagram-content svg .taskText {
+  fill: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .taskTextOutsideRight,
+[data-theme="dark"] .diagram-content svg .taskTextOutsideLeft {
+  fill: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .sectionTitle {
+  fill: #c4b5fd !important;
+}
+
+/* Class diagram elements */
+[data-theme="dark"] .diagram-content svg .classGroup rect {
+  fill: #312e81 !important;
+  stroke: #8b5cf6 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .classGroup text {
+  fill: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .classLabel {
+  fill: #e2e8f0 !important;
+}
+
+/* ER diagram elements */
+[data-theme="dark"] .diagram-content svg .er.entityBox {
+  fill: #312e81 !important;
+  stroke: #8b5cf6 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .er.entityLabel {
+  fill: #e2e8f0 !important;
+}
+
+/* Pie chart elements */
+[data-theme="dark"] .diagram-content svg .pieTitleText {
+  fill: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .diagram-content svg .slice {
+  stroke: #1e1b4b !important;
+}
+
+[data-theme="dark"] .diagram-content svg .legend text {
+  fill: #e2e8f0 !important;
 }
 
 .diagram-error {

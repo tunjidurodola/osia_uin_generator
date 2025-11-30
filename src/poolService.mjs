@@ -5,6 +5,7 @@
 
 import { getDb } from './db.mjs';
 import { generateUin } from './uinGenerator.mjs';
+import { getFormat, getFormatByScope, getFormatByMode, getDefaultFormat, applyFormat } from './formatService.mjs';
 
 /**
  * Insert audit log entry
@@ -36,9 +37,11 @@ async function insertAudit({ uin, eventType, oldStatus, newStatus, actorSystem, 
  * @param {string} params.mode - Generation mode
  * @param {string} params.scope - Scope/sector
  * @param {object} params.options - UIN generation options
+ * @param {number} params.formatId - Optional format ID to associate with generated UINs
+ * @param {string} params.formatCode - Optional format code to associate with generated UINs
  * @returns {Promise<object>} Summary of generation
  */
-export async function preGenerateUins({ count, mode, scope, options = {} }) {
+export async function preGenerateUins({ count, mode, scope, options = {}, formatId = null, formatCode = null }) {
   if (count < 1 || count > 100000) {
     throw new Error('Count must be between 1 and 100,000');
   }
@@ -47,7 +50,30 @@ export async function preGenerateUins({ count, mode, scope, options = {} }) {
   const generated = [];
   const errors = [];
 
-  console.log(`Pre-generating ${count} UINs (mode: ${mode}, scope: ${scope})...`);
+  // Resolve format ID if format code provided
+  let resolvedFormatId = formatId;
+  if (!resolvedFormatId && formatCode) {
+    const format = await getFormat(formatCode);
+    if (format) {
+      resolvedFormatId = format.id;
+    }
+  }
+
+  // If no explicit format, try to auto-detect based on scope or mode
+  let autoFormat = null;
+  if (!resolvedFormatId) {
+    if (scope) {
+      autoFormat = await getFormatByScope(scope);
+    }
+    if (!autoFormat && mode) {
+      autoFormat = await getFormatByMode(mode);
+    }
+    if (autoFormat) {
+      resolvedFormatId = autoFormat.id;
+    }
+  }
+
+  console.log(`Pre-generating ${count} UINs (mode: ${mode}, scope: ${scope}, format: ${resolvedFormatId || 'default'})...`);
 
   for (let i = 0; i < count; i++) {
     try {
@@ -82,6 +108,17 @@ export async function preGenerateUins({ count, mode, scope, options = {} }) {
         })
         .returning('*');
 
+      // If format specified, create format override association
+      if (resolvedFormatId) {
+        await db('uin_format_overrides')
+          .insert({
+            uin: result.value,
+            format_id: resolvedFormatId
+          })
+          .onConflict('uin')
+          .merge();
+      }
+
       // Insert audit log
       await insertAudit({
         uin: result.value,
@@ -90,7 +127,12 @@ export async function preGenerateUins({ count, mode, scope, options = {} }) {
         newStatus: 'AVAILABLE',
         actorSystem: 'POOL_SERVICE',
         actorRef: null,
-        details: { mode, scope, generated_at: new Date().toISOString() }
+        details: {
+          mode,
+          scope,
+          format_id: resolvedFormatId || null,
+          generated_at: new Date().toISOString()
+        }
       });
 
       generated.push(inserted);
@@ -109,6 +151,7 @@ export async function preGenerateUins({ count, mode, scope, options = {} }) {
   return {
     inserted: generated.length,
     errors: errors.length,
+    format_id: resolvedFormatId,
     errorDetails: errors.length > 0 ? errors.slice(0, 10) : []
   };
 }

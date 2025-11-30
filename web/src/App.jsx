@@ -67,6 +67,26 @@ function MermaidDiagram({ chart, title }) {
   const uniqueId = useId().replace(/:/g, '');
   const [svg, setSvg] = useState('');
   const [error, setError] = useState(null);
+  const [themeKey, setThemeKey] = useState(0);
+
+  // Listen for theme changes and trigger re-render
+  useEffect(() => {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === 'data-theme') {
+          // Force re-render when theme changes
+          setThemeKey(prev => prev + 1);
+        }
+      });
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme']
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const renderDiagram = async () => {
@@ -76,6 +96,9 @@ function MermaidDiagram({ chart, title }) {
         // Clear previous content
         setSvg('');
         setError(null);
+
+        // Small delay to ensure mermaid is re-initialized with new theme
+        await new Promise(resolve => setTimeout(resolve, 50));
 
         const id = `mermaid-${uniqueId}-${Date.now()}`;
         const { svg: renderedSvg } = await mermaid.render(id, chart.trim());
@@ -87,7 +110,7 @@ function MermaidDiagram({ chart, title }) {
     };
 
     renderDiagram();
-  }, [chart, uniqueId]);
+  }, [chart, uniqueId, themeKey]);
 
   return (
     <div className="mermaid-diagram" ref={containerRef}>
@@ -127,7 +150,8 @@ function TabButton({ active, onClick, children }) {
 
 // Pool Statistics Dashboard Component
 function PoolDashboard() {
-  const [scope, setScope] = useState('foundational');
+  const { t } = useI18n();
+  const [scope, setScope] = useState('');
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -138,6 +162,24 @@ function PoolDashboard() {
   const [pregenScope, setPregenScope] = useState('foundational');
   const [pregenLength, setPregenLength] = useState(19);
   const [pregenResult, setPregenResult] = useState(null);
+  const [pregenFormat, setPregenFormat] = useState('');
+  const [availableFormats, setAvailableFormats] = useState([]);
+
+  // Load available formats on mount
+  useEffect(() => {
+    const loadFormats = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/formats`);
+        const data = await response.json();
+        if (data.success && data.formats) {
+          setAvailableFormats(data.formats);
+        }
+      } catch (err) {
+        console.error('Failed to load formats:', err);
+      }
+    };
+    loadFormats();
+  }, []);
 
   const fetchStats = async () => {
     setLoading(true);
@@ -162,18 +204,25 @@ function PoolDashboard() {
     setError(null);
     setPregenResult(null);
     try {
+      const requestBody = {
+        count: parseInt(pregenCount),
+        mode: pregenMode,
+        scope: pregenScope,
+        options: {
+          length: parseInt(pregenLength),
+          excludeAmbiguous: true
+        }
+      };
+
+      // Add format association if selected
+      if (pregenFormat) {
+        requestBody.format_code = pregenFormat;
+      }
+
       const response = await fetch(`${API_BASE_URL}/uin/pre-generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          count: parseInt(pregenCount),
-          mode: pregenMode,
-          scope: pregenScope,
-          options: {
-            length: parseInt(pregenLength),
-            excludeAmbiguous: true
-          }
-        })
+        body: JSON.stringify(requestBody)
       });
       const data = await response.json();
       if (data.success) {
@@ -318,6 +367,22 @@ function PoolDashboard() {
             />
             <small className="help-text">Characters (8-32)</small>
           </div>
+          <div className="form-group">
+            <label>{t('pool.pregen.displayFormat') || 'Display Format'}</label>
+            <select
+              value={pregenFormat}
+              onChange={(e) => setPregenFormat(e.target.value)}
+              className="input-select"
+            >
+              <option value="">{t('pool.pregen.noFormat') || 'No format (use default)'}</option>
+              {availableFormats.map(fmt => (
+                <option key={fmt.format_code} value={fmt.format_code}>
+                  {fmt.name} ({fmt.format_code})
+                </option>
+              ))}
+            </select>
+            <small className="help-text">{t('pool.pregen.formatHelp') || 'Associates format for display when UINs are retrieved'}</small>
+          </div>
         </div>
 
         <div className="form-actions">
@@ -332,6 +397,7 @@ function PoolDashboard() {
             <div className="success-content">
               <strong>{pregenResult.inserted?.toLocaleString()} UINs generated successfully</strong>
               {pregenResult.errors > 0 && <span className="error-note">{pregenResult.errors} errors occurred</span>}
+              {pregenResult.format_id && <span className="format-note"> (Format applied: {pregenFormat})</span>}
             </div>
           </div>
         )}
@@ -472,9 +538,9 @@ function UinLifecycleOperations({ onStatusChange }) {
             )}
           </div>
           <div className="current-uin-value">
-            <code>{fetchedUin.uin}</code>
+            <code className="uin-formatted">{fetchedUin.uin_formatted || fetchedUin.uin}</code>
             <div className="current-uin-actions">
-              <button onClick={copyUin} className="btn-copy" title="Copy to clipboard">
+              <button onClick={copyUin} className="btn-copy" title="Copy raw UIN to clipboard">
                 {copied ? 'Copied!' : 'Copy'}
               </button>
               <button onClick={useUin} className="btn-use-uin" title="Use in operations">
@@ -482,6 +548,12 @@ function UinLifecycleOperations({ onStatusChange }) {
               </button>
             </div>
           </div>
+          {fetchedUin.uin_formatted && fetchedUin.uin_formatted !== fetchedUin.uin && (
+            <div className="current-uin-raw">
+              <span className="raw-label">Raw:</span>
+              <code className="uin-raw">{fetchedUin.uin}</code>
+            </div>
+          )}
           {fetchedUin.scope && (
             <div className="current-uin-meta">
               <span>Scope: {fetchedUin.scope}</span>
@@ -631,15 +703,17 @@ function UinLifecycleOperations({ onStatusChange }) {
 
 // Documentation Component
 function Documentation() {
+  const { t } = useI18n();
   const [activeSection, setActiveSection] = useState('overview');
 
   const sections = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'architecture', label: 'Architecture' },
-    { id: 'api', label: 'API Reference' },
-    { id: 'lifecycle', label: 'UIN Lifecycle' },
-    { id: 'security', label: 'Security' },
-    { id: 'deployment', label: 'Deployment' },
+    { id: 'overview', labelKey: 'docs.sections.overview' },
+    { id: 'architecture', labelKey: 'docs.sections.architecture' },
+    { id: 'api', labelKey: 'docs.sections.api' },
+    { id: 'formats', labelKey: 'docs.sections.formats' },
+    { id: 'lifecycle', labelKey: 'docs.sections.lifecycle' },
+    { id: 'security', labelKey: 'docs.sections.security' },
+    { id: 'deployment', labelKey: 'docs.sections.deployment' },
   ];
 
   return (
@@ -647,7 +721,7 @@ function Documentation() {
       <div className="docs-layout">
         {/* Sidebar Navigation */}
         <nav className="docs-nav">
-          <h3>Documentation</h3>
+          <h3>{t('docs.title')}</h3>
           <ul>
             {sections.map(s => (
               <li key={s.id}>
@@ -655,13 +729,13 @@ function Documentation() {
                   className={activeSection === s.id ? 'active' : ''}
                   onClick={() => setActiveSection(s.id)}
                 >
-                  {s.label}
+                  {t(s.labelKey)}
                 </button>
               </li>
             ))}
           </ul>
           <div className="docs-meta">
-            <small>Version 2.0.0</small>
+            <small>{t('docs.version')} 2.0.0</small>
           </div>
         </nav>
 
@@ -669,67 +743,64 @@ function Documentation() {
         <div className="docs-content">
           {activeSection === 'overview' && (
             <article className="doc-article">
-              <h1>OSIA UIN Generator</h1>
-              <p className="lead">
-                A production-grade, PostgreSQL-backed Unique Identification Number (UIN) generator
-                based on the <strong>Open Standards for Identity APIs (OSIA)</strong> specification.
-              </p>
+              <h1>{t('docs.overview.title')}</h1>
+              <p className="lead" dangerouslySetInnerHTML={{ __html: t('docs.overview.lead') }} />
 
-              <h2>Key Features</h2>
+              <h2>{t('docs.overview.features.title')}</h2>
               <ul className="feature-list">
-                <li><strong>OSIA-Based Design</strong> - Implements POST /v1/uin endpoint pattern</li>
-                <li><strong>Four Generation Modes</strong> - Foundational, Random, Structured, and Sector Token</li>
-                <li><strong>PostgreSQL Pool Management</strong> - Pre-generation, claiming, and assignment workflows</li>
-                <li><strong>Cryptographic Security</strong> - CSPRNG, HMAC-SHA256, RIPEMD-160 hashing</li>
-                <li><strong>HSM TRNG Support</strong> - Hardware True Random Number Generation with provenance tracking</li>
-                <li><strong>Complete Audit Trail</strong> - Immutable logging of all UIN lifecycle events</li>
-                <li><strong>Sector Tokenization</strong> - Unlinkable, sector-specific derived identifiers</li>
-                <li><strong>Multi-Format Output</strong> - JSON, JWT (RFC 7519), and JSON-LD (W3C Linked Data)</li>
-                <li><strong>Entropy Provenance</strong> - Track whether UINs were generated using HSM TRNG or software CSPRNG</li>
+                <li><strong>{t('docs.overview.features.osia')}</strong> - {t('docs.overview.features.osiaDesc')}</li>
+                <li><strong>{t('docs.overview.features.modes')}</strong> - {t('docs.overview.features.modesDesc')}</li>
+                <li><strong>{t('docs.overview.features.pool')}</strong> - {t('docs.overview.features.poolDesc')}</li>
+                <li><strong>{t('docs.overview.features.crypto')}</strong> - {t('docs.overview.features.cryptoDesc')}</li>
+                <li><strong>{t('docs.overview.features.hsm')}</strong> - {t('docs.overview.features.hsmDesc')}</li>
+                <li><strong>{t('docs.overview.features.audit')}</strong> - {t('docs.overview.features.auditDesc')}</li>
+                <li><strong>{t('docs.overview.features.sector')}</strong> - {t('docs.overview.features.sectorDesc')}</li>
+                <li><strong>{t('docs.overview.features.formats')}</strong> - {t('docs.overview.features.formatsDesc')}</li>
+                <li><strong>{t('docs.overview.features.provenance')}</strong> - {t('docs.overview.features.provenanceDesc')}</li>
               </ul>
 
-              <h2>Supported Sectors</h2>
+              <h2>{t('docs.overview.sectors.title')}</h2>
               <div className="sector-grid">
-                {['Health', 'Tax', 'Finance', 'Telco', 'Statistics', 'Education', 'Social', 'Government'].map(s => (
-                  <span key={s} className="sector-badge">{s}</span>
+                {['health', 'tax', 'finance', 'telco', 'statistics', 'education', 'social', 'government'].map(s => (
+                  <span key={s} className="sector-badge">{t(`docs.overview.sectors.${s}`)}</span>
                 ))}
               </div>
 
-              <h2>Technology Stack</h2>
+              <h2>{t('docs.overview.stack.title')}</h2>
               <table className="doc-table">
                 <thead>
-                  <tr><th>Layer</th><th>Technology</th></tr>
+                  <tr><th>{t('docs.overview.stack.layer')}</th><th>{t('docs.overview.stack.technology')}</th></tr>
                 </thead>
                 <tbody>
-                  <tr><td>Runtime</td><td>Node.js 20+</td></tr>
-                  <tr><td>Server</td><td>Express.js 4.x</td></tr>
-                  <tr><td>Database</td><td>PostgreSQL 15+</td></tr>
-                  <tr><td>Query Builder</td><td>Knex.js 3.x</td></tr>
-                  <tr><td>Frontend</td><td>React 18 + Vite</td></tr>
-                  <tr><td>Process Manager</td><td>PM2</td></tr>
+                  <tr><td>{t('docs.overview.stack.runtime')}</td><td>Node.js 20+</td></tr>
+                  <tr><td>{t('docs.overview.stack.server')}</td><td>Express.js 4.x</td></tr>
+                  <tr><td>{t('docs.overview.stack.database')}</td><td>PostgreSQL 15+</td></tr>
+                  <tr><td>{t('docs.overview.stack.queryBuilder')}</td><td>Knex.js 3.x</td></tr>
+                  <tr><td>{t('docs.overview.stack.frontend')}</td><td>React 18 + Vite</td></tr>
+                  <tr><td>{t('docs.overview.stack.processManager')}</td><td>PM2</td></tr>
                 </tbody>
               </table>
 
-              <h2>Quick Start</h2>
-              <pre className="code-block">{`# Install dependencies
+              <h2>{t('docs.overview.quickStart.title')}</h2>
+              <pre className="code-block">{`# ${t('docs.overview.quickStart.install')}
 npm install
 
-# Run database migrations
+# ${t('docs.overview.quickStart.migrate')}
 npm run migrate
 
-# Start the API server
+# ${t('docs.overview.quickStart.start')}
 npm start
 
-# Or use PM2 for production
+# ${t('docs.overview.quickStart.pm2')}
 pm2 start ecosystem.config.cjs`}</pre>
             </article>
           )}
 
           {activeSection === 'architecture' && (
             <article className="doc-article">
-              <h1>System Architecture</h1>
+              <h1>{t('docs.architecture.title')}</h1>
 
-              <h2>High-Level Overview</h2>
+              <h2>{t('docs.architecture.highLevel')}</h2>
               <MermaidDiagram
                 title="System Architecture"
                 chart={`graph TB
@@ -764,22 +835,42 @@ pm2 start ecosystem.config.cjs`}</pre>
     SECTOR --> GEN`}
               />
 
-              <h2>Component Diagram</h2>
+              <h2>{t('docs.architecture.component')}</h2>
               <MermaidDiagram
                 title="Component Architecture"
                 chart={`flowchart LR
-    server[server.mjs] --> gen[uinGenerator.mjs]
-    server --> pool[poolService.mjs]
-    gen --> check[checksum.mjs]
-    gen --> hash[hash.mjs]
-    gen --> sector[sectorToken.mjs]
-    pool --> db[db.mjs]
-    pool --> gen
-    sector --> hash
-    db --> config[config.mjs]`}
+    subgraph API["API Layer"]
+        SERVER["server.mjs"]
+    end
+
+    subgraph Core["Core Services"]
+        GEN["uinGenerator.mjs"]
+        POOL["poolService.mjs"]
+        SECTOR["sectorToken.mjs"]
+    end
+
+    subgraph Utils["Utilities"]
+        CHECK["checksum.mjs"]
+        HASH["hash.mjs"]
+        CONFIG["config.mjs"]
+    end
+
+    subgraph Data["Data Layer"]
+        DB["db.mjs"]
+    end
+
+    SERVER --> GEN
+    SERVER --> POOL
+    GEN --> CHECK
+    GEN --> HASH
+    GEN --> SECTOR
+    POOL --> DB
+    POOL --> GEN
+    SECTOR --> HASH
+    DB --> CONFIG`}
               />
 
-              <h2>Database Schema</h2>
+              <h2>{t('docs.architecture.dbSchema')}</h2>
               <MermaidDiagram
                 title="Entity Relationship Diagram"
                 chart={`erDiagram
@@ -816,31 +907,31 @@ pm2 start ecosystem.config.cjs`}</pre>
     uin_pool ||--o{ uin_audit : "has"`}
               />
 
-              <h2>Generation Modes</h2>
+              <h2>{t('docs.architecture.genModes')}</h2>
               <table className="doc-table">
                 <thead>
-                  <tr><th>Mode</th><th>Description</th><th>Use Case</th></tr>
+                  <tr><th>{t('docs.architecture.mode')}</th><th>{t('docs.architecture.description')}</th><th>{t('docs.architecture.useCase')}</th></tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td><code>foundational</code></td>
-                    <td>High-entropy CSPRNG, no embedded PII</td>
-                    <td>Primary national ID, lifelong identifier</td>
+                    <td>{t('docs.architecture.modes.foundationalDesc')}</td>
+                    <td>{t('docs.architecture.modes.foundationalUse')}</td>
                   </tr>
                   <tr>
                     <td><code>random</code></td>
-                    <td>Configurable length, charset, checksum</td>
-                    <td>Ad-hoc identifiers, testing</td>
+                    <td>{t('docs.architecture.modes.randomDesc')}</td>
+                    <td>{t('docs.architecture.modes.randomUse')}</td>
                   </tr>
                   <tr>
                     <td><code>structured</code></td>
-                    <td>Template-based with placeholders</td>
-                    <td>Region/facility-encoded IDs</td>
+                    <td>{t('docs.architecture.modes.structuredDesc')}</td>
+                    <td>{t('docs.architecture.modes.structuredUse')}</td>
                   </tr>
                   <tr>
                     <td><code>sector_token</code></td>
-                    <td>HMAC-derived, unlinkable tokens</td>
-                    <td>Health, tax, finance sector IDs</td>
+                    <td>{t('docs.architecture.modes.sectorDesc')}</td>
+                    <td>{t('docs.architecture.modes.sectorUse')}</td>
                   </tr>
                 </tbody>
               </table>
@@ -849,49 +940,49 @@ pm2 start ecosystem.config.cjs`}</pre>
 
           {activeSection === 'api' && (
             <article className="doc-article">
-              <h1>API Reference</h1>
+              <h1>{t('docs.api.title')}</h1>
 
-              <h2>Primary Endpoint</h2>
+              <h2>{t('docs.api.osiaEndpoint')}</h2>
               <div className="endpoint-card primary">
                 <div className="endpoint-header">
                   <span className="method post">POST</span>
                   <code>/v1/uin</code>
                 </div>
-                <p>Generate a new UIN following the OSIA endpoint pattern.</p>
+                <p>{t('docs.api.osiaEndpointDesc')}</p>
 
-                <h4>Query Parameters</h4>
+                <h4>{t('docs.api.queryParams')}</h4>
                 <table className="doc-table">
-                  <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+                  <thead><tr><th>{t('docs.api.parameter')}</th><th>{t('docs.api.type')}</th><th>{t('docs.api.required')}</th><th>{t('docs.api.descriptionCol')}</th></tr></thead>
                   <tbody>
-                    <tr><td><code>transactionId</code></td><td>string</td><td>Yes</td><td>Transaction identifier for tracking</td></tr>
+                    <tr><td><code>transactionId</code></td><td>string</td><td>{t('common.yes')}</td><td>{t('docs.api.transactionIdDesc')}</td></tr>
                   </tbody>
                 </table>
 
-                <h4>Request Body</h4>
+                <h4>{t('docs.api.requestBody')}</h4>
                 <pre className="code-block">{`{
   "firstName": "John",
   "lastName": "Doe",
   "dateOfBirth": "1990-01-15"
 }`}</pre>
 
-                <h4>Response (200 OK)</h4>
+                <h4>{t('docs.api.response')}</h4>
                 <pre className="code-block">{`"ABCD1234EFGH5678XYZ"`}</pre>
 
-                <h4>Error Response</h4>
+                <h4>{t('docs.api.errorResponse')}</h4>
                 <pre className="code-block">{`{
   "code": 400,
   "message": "Missing transactionId parameter"
 }`}</pre>
               </div>
 
-              <h2>Information Endpoints</h2>
+              <h2>{t('docs.api.infoEndpoints')}</h2>
 
               <div className="endpoint-card">
                 <div className="endpoint-header">
                   <span className="method get">GET</span>
                   <code>/health</code>
                 </div>
-                <p>Health check with HSM, Vault, and database status.</p>
+                <p>{t('docs.api.endpoints.health')}</p>
               </div>
 
               <div className="endpoint-card">
@@ -899,7 +990,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method get">GET</span>
                   <code>/crypto/status</code>
                 </div>
-                <p>Cryptographic services status (HSM, Vault, secrets).</p>
+                <p>{t('docs.api.endpoints.cryptoStatus')}</p>
               </div>
 
               <div className="endpoint-card">
@@ -907,7 +998,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method get">GET</span>
                   <code>/modes</code>
                 </div>
-                <p>List available generation modes.</p>
+                <p>{t('docs.api.endpoints.modes')}</p>
               </div>
 
               <div className="endpoint-card">
@@ -915,17 +1006,17 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method get">GET</span>
                   <code>/sectors</code>
                 </div>
-                <p>List supported sectors for tokenization.</p>
+                <p>{t('docs.api.endpoints.sectors')}</p>
               </div>
 
-              <h2>Pool Management Endpoints</h2>
+              <h2>{t('docs.api.poolEndpoints')}</h2>
 
               <div className="endpoint-card">
                 <div className="endpoint-header">
                   <span className="method get">GET</span>
                   <code>/pool/stats</code>
                 </div>
-                <p>Get pool statistics by scope.</p>
+                <p>{t('docs.api.endpoints.poolStats')}</p>
                 <pre className="code-block">{`// Response
 {
   "success": true,
@@ -945,7 +1036,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method get">GET</span>
                   <code>/pool/peek</code>
                 </div>
-                <p>Preview top available UINs without claiming them.</p>
+                <p>{t('docs.api.endpoints.poolPeek')}</p>
                 <pre className="code-block">{`// Request: GET /pool/peek?status=AVAILABLE&limit=1
 // Response
 {
@@ -961,7 +1052,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/pool/preassign</code>
                 </div>
-                <p>Pre-assign a UIN from the pool (UI-friendly). Changes status: AVAILABLE → PREASSIGNED.</p>
+                <p>{t('docs.api.endpoints.poolPreassign')}</p>
                 <pre className="code-block">{`// Request
 { "scope": "foundational" }
 
@@ -979,7 +1070,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/pool/assign</code>
                 </div>
-                <p>Assign a pre-assigned UIN to an entity (UI-friendly). Changes status: PREASSIGNED → ASSIGNED.</p>
+                <p>{t('docs.api.endpoints.poolAssign')}</p>
                 <pre className="code-block">{`// Request
 { "uin": "ABCD1234...", "entityId": "person-123" }
 
@@ -997,7 +1088,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/pool/revoke</code>
                 </div>
-                <p>Revoke an assigned UIN (fraud, error correction). Changes status: → REVOKED.</p>
+                <p>{t('docs.api.endpoints.poolRevoke')}</p>
                 <pre className="code-block">{`// Request
 { "uin": "ABCD1234...", "reason": "Fraud detected" }`}</pre>
               </div>
@@ -1007,19 +1098,19 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/pool/retire</code>
                 </div>
-                <p>Retire a UIN (end-of-life, death registration). Changes status: → RETIRED.</p>
+                <p>{t('docs.api.endpoints.poolRetire')}</p>
                 <pre className="code-block">{`// Request
 { "uin": "ABCD1234...", "reason": "Death registration" }`}</pre>
               </div>
 
-              <h2>UIN Lifecycle Endpoints</h2>
+              <h2>{t('docs.api.lifecycleEndpoints')}</h2>
 
               <div className="endpoint-card">
                 <div className="endpoint-header">
                   <span className="method post">POST</span>
                   <code>/uin/pre-generate</code>
                 </div>
-                <p>Batch pre-generate UINs into the pool.</p>
+                <p>{t('docs.api.endpoints.uinPregenerate')}</p>
                 <pre className="code-block">{`// Request
 {
   "count": 1000,
@@ -1034,7 +1125,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/uin/claim</code>
                 </div>
-                <p>Claim an available UIN (AVAILABLE → PREASSIGNED).</p>
+                <p>{t('docs.api.endpoints.uinClaim')}</p>
                 <pre className="code-block">{`// Request
 { "scope": "health", "client_id": "hospital-a" }
 
@@ -1054,7 +1145,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/uin/assign</code>
                 </div>
-                <p>Assign UIN to external reference (PREASSIGNED → ASSIGNED).</p>
+                <p>{t('docs.api.endpoints.uinAssign')}</p>
                 <pre className="code-block">{`// Request
 {
   "uin": "ABCD1234EFGH5678XYZ",
@@ -1069,7 +1160,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/uin/release</code>
                 </div>
-                <p>Release a pre-assigned UIN back to pool (PREASSIGNED → AVAILABLE).</p>
+                <p>{t('docs.api.endpoints.uinRelease')}</p>
               </div>
 
               <div className="endpoint-card">
@@ -1077,7 +1168,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/uin/status</code>
                 </div>
-                <p>Update UIN status (retire, revoke, etc.).</p>
+                <p>{t('docs.api.endpoints.uinStatus')}</p>
               </div>
 
               <div className="endpoint-card">
@@ -1085,7 +1176,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method post">POST</span>
                   <code>/uin/cleanup-preassigned</code>
                 </div>
-                <p>Release stale pre-assigned UINs back to available.</p>
+                <p>{t('docs.api.endpoints.uinCleanup')}</p>
               </div>
 
               <div className="endpoint-card">
@@ -1093,7 +1184,7 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method get">GET</span>
                   <code>/uin/:uin</code>
                 </div>
-                <p>Lookup UIN details by value.</p>
+                <p>{t('docs.api.endpoints.uinLookup')}</p>
               </div>
 
               <div className="endpoint-card">
@@ -1101,17 +1192,17 @@ pm2 start ecosystem.config.cjs`}</pre>
                   <span className="method get">GET</span>
                   <code>/uin/:uin/audit</code>
                 </div>
-                <p>Get complete audit trail for a UIN.</p>
+                <p>{t('docs.api.endpoints.uinAudit')}</p>
               </div>
 
-              <h2>Stateless Generation</h2>
+              <h2>{t('docs.api.statelessEndpoints')}</h2>
 
               <div className="endpoint-card">
                 <div className="endpoint-header">
                   <span className="method post">POST</span>
                   <code>/generate</code>
                 </div>
-                <p>Generate UIN without database persistence.</p>
+                <p>{t('docs.api.endpoints.generate')}</p>
                 <pre className="code-block">{`// Request
 {
   "mode": "foundational",
@@ -1123,11 +1214,138 @@ pm2 start ecosystem.config.cjs`}</pre>
             </article>
           )}
 
+          {activeSection === 'formats' && (
+            <article className="doc-article">
+              <h1>{t('docs.formats.title')}</h1>
+              <p className="lead">{t('docs.formats.description')}</p>
+
+              <h2>{t('docs.formats.howItWorks')}</h2>
+              <p>{t('docs.formats.howItWorksDesc')}</p>
+
+              <h3>{t('docs.formats.example')}</h3>
+              <div className="format-example">
+                <div className="format-row">
+                  <span className="format-label">{t('docs.formats.exampleRaw')}:</span>
+                  <code className="uin-raw">ABCDEFGHIJKLMNOPQRS</code>
+                </div>
+                <div className="format-row">
+                  <span className="format-label">{t('docs.formats.exampleFormatted')}:</span>
+                  <code className="uin-formatted">ABCDE.FGHI.JKLM.NOPQ.RS</code>
+                </div>
+              </div>
+
+              <h2>{t('docs.formats.configTable')}</h2>
+              <table className="doc-table">
+                <thead>
+                  <tr>
+                    <th>{t('docs.formats.field')}</th>
+                    <th>{t('docs.formats.fieldDesc')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>format_code</code></td><td>{t('docs.formats.fields.formatCode')}</td></tr>
+                  <tr><td><code>separator</code></td><td>{t('docs.formats.fields.separator')}</td></tr>
+                  <tr><td><code>segment_lengths</code></td><td>{t('docs.formats.fields.segmentLengths')}</td></tr>
+                  <tr><td><code>display_case</code></td><td>{t('docs.formats.fields.displayCase')}</td></tr>
+                  <tr><td><code>prefix</code></td><td>{t('docs.formats.fields.prefix')}</td></tr>
+                  <tr><td><code>suffix</code></td><td>{t('docs.formats.fields.suffix')}</td></tr>
+                  <tr><td><code>applies_to_scope / applies_to_mode</code></td><td>{t('docs.formats.fields.appliesTo')}</td></tr>
+                </tbody>
+              </table>
+
+              <h2>{t('docs.formats.defaultFormats')}</h2>
+              <p>{t('docs.formats.defaultFormatsDesc')}</p>
+              <ul>
+                <li><strong>OSIA_STANDARD</strong> - {t('docs.formats.formatNames.osiaStandard')}</li>
+                <li><strong>OSIA_COMPACT</strong> - {t('docs.formats.formatNames.osiaCompact')}</li>
+                <li><strong>OSIA_DASHED</strong> - {t('docs.formats.formatNames.osiaDashed')}</li>
+                <li><strong>OSIA_SPACED</strong> - {t('docs.formats.formatNames.osiaSpaced')}</li>
+                <li><strong>HEALTH_ID</strong> - {t('docs.formats.formatNames.healthId')}</li>
+                <li><strong>TAX_ID</strong> - {t('docs.formats.formatNames.taxId')}</li>
+                <li><strong>SHORT_ID</strong> - {t('docs.formats.formatNames.shortId')}</li>
+              </ul>
+
+              <h2>{t('docs.formats.apiUsage')}</h2>
+
+              <h3>{t('docs.formats.listFormats')}</h3>
+              <pre className="code-block">{`GET /formats
+
+Response:
+{
+  "success": true,
+  "formats": [
+    {
+      "id": 1,
+      "format_code": "OSIA_STANDARD",
+      "name": "OSIA Standard Format",
+      "separator": ".",
+      "segment_lengths": [5, 4, 4, 4, 2],
+      "total_length": 19,
+      "is_default": true
+    }
+  ]
+}`}</pre>
+
+              <h3>{t('docs.formats.previewFormat')}</h3>
+              <pre className="code-block">{`POST /formats/preview
+Content-Type: application/json
+
+{
+  "uin": "ABCDEFGHIJKLMNOPQRS",
+  "format_code": "OSIA_STANDARD"
+}
+
+Response:
+{
+  "success": true,
+  "raw": "ABCDEFGHIJKLMNOPQRS",
+  "formatted": "ABCDE.FGHI.JKLM.NOPQ.RS"
+}`}</pre>
+
+              <h3>{t('docs.formats.setOverride')}</h3>
+              <pre className="code-block">{`POST /uin/{uin}/format
+Content-Type: application/json
+
+{
+  "format_id": 3
+}
+
+Response:
+{
+  "success": true,
+  "override": {
+    "uin": "ABCDEFGHIJKLMNOPQRS",
+    "format_id": 3
+  }
+}`}</pre>
+
+              <h2>{t('docs.api.formatEndpoints')}</h2>
+              <table className="doc-table">
+                <thead>
+                  <tr>
+                    <th>Endpoint</th>
+                    <th>{t('docs.api.descriptionCol')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>GET /formats</code></td><td>{t('docs.api.endpoints.formatsList')}</td></tr>
+                  <tr><td><code>GET /formats/:id</code></td><td>{t('docs.api.endpoints.formatsGet')}</td></tr>
+                  <tr><td><code>POST /formats</code></td><td>{t('docs.api.endpoints.formatsCreate')}</td></tr>
+                  <tr><td><code>PUT /formats/:id</code></td><td>{t('docs.api.endpoints.formatsUpdate')}</td></tr>
+                  <tr><td><code>DELETE /formats/:id</code></td><td>{t('docs.api.endpoints.formatsDelete')}</td></tr>
+                  <tr><td><code>POST /formats/preview</code></td><td>{t('docs.api.endpoints.formatsPreview')}</td></tr>
+                  <tr><td><code>POST /uin/:uin/format</code></td><td>{t('docs.api.endpoints.uinFormatSet')}</td></tr>
+                  <tr><td><code>DELETE /uin/:uin/format</code></td><td>{t('docs.api.endpoints.uinFormatRemove')}</td></tr>
+                </tbody>
+              </table>
+            </article>
+          )}
+
           {activeSection === 'lifecycle' && (
             <article className="doc-article">
-              <h1>UIN Lifecycle</h1>
+              <h1>{t('docs.lifecycle.title')}</h1>
 
-              <h2>State Machine</h2>
+              <h2>{t('docs.lifecycle.stateMachine')}</h2>
               <MermaidDiagram
                 title="UIN State Transitions"
                 chart={`stateDiagram-v2
@@ -1150,41 +1368,41 @@ pm2 start ecosystem.config.cjs`}</pre>
     note right of REVOKED: Fraud/abuse`}
               />
 
-              <h2>Lifecycle States</h2>
+              <h2>{t('docs.lifecycle.states.title')}</h2>
               <table className="doc-table">
                 <thead>
-                  <tr><th>Status</th><th>Description</th><th>Transitions</th></tr>
+                  <tr><th>{t('docs.lifecycle.states.status')}</th><th>{t('docs.lifecycle.states.description')}</th><th>{t('docs.lifecycle.states.transitions')}</th></tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td><span className="status-badge available">AVAILABLE</span></td>
-                    <td>Pre-generated, ready to be claimed</td>
+                    <td>{t('docs.lifecycle.states.available')}</td>
                     <td>→ PREASSIGNED</td>
                   </tr>
                   <tr>
                     <td><span className="status-badge preassigned">PREASSIGNED</span></td>
-                    <td>Claimed by system, not yet bound to PII</td>
-                    <td>→ ASSIGNED, → AVAILABLE (release)</td>
+                    <td>{t('docs.lifecycle.states.preassigned')}</td>
+                    <td>→ ASSIGNED, → AVAILABLE</td>
                   </tr>
                   <tr>
                     <td><span className="status-badge assigned">ASSIGNED</span></td>
-                    <td>Bound to a person/entity reference</td>
+                    <td>{t('docs.lifecycle.states.assigned')}</td>
                     <td>→ RETIRED, → REVOKED</td>
                   </tr>
                   <tr>
                     <td><span className="status-badge retired">RETIRED</span></td>
-                    <td>No longer active (death, end-of-life)</td>
-                    <td>Terminal state</td>
+                    <td>{t('docs.lifecycle.states.retired')}</td>
+                    <td>{t('docs.lifecycle.states.terminal')}</td>
                   </tr>
                   <tr>
                     <td><span className="status-badge revoked">REVOKED</span></td>
-                    <td>Explicitly invalidated (fraud)</td>
-                    <td>Terminal state</td>
+                    <td>{t('docs.lifecycle.states.revoked')}</td>
+                    <td>{t('docs.lifecycle.states.terminal')}</td>
                   </tr>
                 </tbody>
               </table>
 
-              <h2>Workflow: Civil Registration</h2>
+              <h2>{t('docs.lifecycle.workflow.title')}</h2>
               <MermaidDiagram
                 title="Civil Registration Sequence"
                 chart={`sequenceDiagram
@@ -1216,7 +1434,7 @@ pm2 start ecosystem.config.cjs`}</pre>
     API-->>CR: {success: true}`}
               />
 
-              <h2>Workflow: Sector Token Derivation</h2>
+              <h2>{t('docs.lifecycle.workflow.sectorTitle')}</h2>
               <MermaidDiagram
                 title="Sector Token Derivation"
                 chart={`sequenceDiagram
@@ -1239,44 +1457,44 @@ pm2 start ecosystem.config.cjs`}</pre>
 
           {activeSection === 'security' && (
             <article className="doc-article">
-              <h1>Security</h1>
+              <h1>{t('docs.security.title')}</h1>
 
-              <h2>Cryptographic Components</h2>
+              <h2>{t('docs.security.crypto.title')}</h2>
               <table className="doc-table">
                 <thead>
-                  <tr><th>Component</th><th>Algorithm</th><th>Purpose</th></tr>
+                  <tr><th>{t('docs.security.crypto.component')}</th><th>{t('docs.security.crypto.algorithm')}</th><th>{t('docs.security.crypto.purpose')}</th></tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>Random Generation (Primary)</td>
+                    <td>{t('docs.security.crypto.randomPrimary')}</td>
                     <td>HSM Hardware TRNG</td>
-                    <td>FIPS 140-2 certified entropy from physical sources</td>
+                    <td>{t('docs.security.crypto.randomPrimaryPurpose')}</td>
                   </tr>
                   <tr>
-                    <td>Random Generation (Fallback)</td>
+                    <td>{t('docs.security.crypto.randomFallback')}</td>
                     <td>Node.js <code>crypto.randomBytes</code></td>
-                    <td>Software CSPRNG when HSM unavailable</td>
+                    <td>{t('docs.security.crypto.randomFallbackPurpose')}</td>
                   </tr>
                   <tr>
-                    <td>Integrity Hash</td>
+                    <td>{t('docs.security.crypto.integrity')}</td>
                     <td>RIPEMD-160(SHA3-256(UIN+salt))</td>
-                    <td>UIN integrity verification</td>
+                    <td>{t('docs.security.crypto.integrityPurpose')}</td>
                   </tr>
                   <tr>
-                    <td>Sector Derivation</td>
+                    <td>{t('docs.security.crypto.sectorDerivation')}</td>
                     <td>HMAC-SHA256</td>
-                    <td>Unlinkable sector tokens</td>
+                    <td>{t('docs.security.crypto.sectorDerivationPurpose')}</td>
                   </tr>
                   <tr>
-                    <td>Checksum</td>
+                    <td>{t('docs.security.crypto.checksum')}</td>
                     <td>ISO 7064 MOD 37-2, MOD 97-10</td>
-                    <td>Transcription error detection</td>
+                    <td>{t('docs.security.crypto.checksumPurpose')}</td>
                   </tr>
                 </tbody>
               </table>
 
-              <h2>Entropy Provenance Tracking</h2>
-              <p>Every generated UIN includes provenance metadata identifying its entropy source:</p>
+              <h2>{t('docs.security.provenance.title')}</h2>
+              <p>{t('docs.security.provenance.description')}</p>
               <pre className="code-block">{`{
   "provenance": {
     "source": "HSM Hardware TRNG" | "Node.js CSPRNG",
@@ -1285,9 +1503,9 @@ pm2 start ecosystem.config.cjs`}</pre>
     "provider": "utimaco" | "yubihsm" | "thales" | "software"
   }
 }`}</pre>
-              <p>HSM TRNG is always prioritized over software CSPRNG when available.</p>
+              <p>{t('docs.security.provenance.priority')}</p>
 
-              <h2>Sector Token Security</h2>
+              <h2>{t('docs.security.sectorSecurity.title')}</h2>
               <MermaidDiagram
                 title="HMAC Token Derivation Flow"
                 chart={`flowchart LR
@@ -1320,17 +1538,17 @@ pm2 start ecosystem.config.cjs`}</pre>
     style TOKEN fill:#51cf66,color:#fff`}
               />
 
-              <h2>Security Best Practices</h2>
+              <h2>{t('docs.security.bestPractices.title')}</h2>
               <ul className="feature-list">
-                <li><strong>Sector Secrets</strong> - Use unique, high-entropy secrets per sector (min 32 bytes)</li>
-                <li><strong>Database Security</strong> - Row-level locking prevents race conditions</li>
-                <li><strong>No PII in UIN</strong> - Foundational mode embeds no personal data</li>
-                <li><strong>Constant-Time Comparison</strong> - Token verification uses timing-safe comparison</li>
-                <li><strong>Audit Immutability</strong> - Audit records are append-only</li>
-                <li><strong>TLS Everywhere</strong> - All API communications over HTTPS</li>
+                <li><strong>{t('docs.security.bestPractices.sectorSecrets')}</strong> - {t('docs.security.bestPractices.sectorSecretsDesc')}</li>
+                <li><strong>{t('docs.security.bestPractices.dbSecurity')}</strong> - {t('docs.security.bestPractices.dbSecurityDesc')}</li>
+                <li><strong>{t('docs.security.bestPractices.noPii')}</strong> - {t('docs.security.bestPractices.noPiiDesc')}</li>
+                <li><strong>{t('docs.security.bestPractices.constantTime')}</strong> - {t('docs.security.bestPractices.constantTimeDesc')}</li>
+                <li><strong>{t('docs.security.bestPractices.auditImmutable')}</strong> - {t('docs.security.bestPractices.auditImmutableDesc')}</li>
+                <li><strong>{t('docs.security.bestPractices.tls')}</strong> - {t('docs.security.bestPractices.tlsDesc')}</li>
               </ul>
 
-              <h2>Authentication (Production)</h2>
+              <h2>{t('docs.security.auth.title')}</h2>
               <pre className="code-block">{`# OAuth 2.0 Bearer Token
 Authorization: Bearer <access_token>
 
@@ -1349,9 +1567,9 @@ Scope: uin.generate
 
           {activeSection === 'deployment' && (
             <article className="doc-article">
-              <h1>Deployment</h1>
+              <h1>{t('docs.deployment.title')}</h1>
 
-              <h2>Environment Variables</h2>
+              <h2>{t('docs.deployment.envVars')}</h2>
               <pre className="code-block">{`# Server Configuration
 PORT=19020
 HOST=0.0.0.0
@@ -1380,7 +1598,7 @@ SECTOR_SECRET_FINANCE=<32+ byte secret>
 UIN_ENABLE_CORS=true
 UIN_CORS_ORIGIN=https://your-domain.gov`}</pre>
 
-              <h2>PM2 Deployment</h2>
+              <h2>{t('docs.deployment.pm2')}</h2>
               <pre className="code-block">{`# Start all services
 pm2 start ecosystem.config.cjs
 
@@ -1399,7 +1617,7 @@ pm2 save
 # Setup startup script
 pm2 startup`}</pre>
 
-              <h2>Docker Deployment</h2>
+              <h2>{t('docs.deployment.docker')}</h2>
               <pre className="code-block">{`# PostgreSQL
 docker run -d \\
   --name osia-postgres \\
@@ -1416,7 +1634,7 @@ npm run migrate
 # Start API server
 npm start`}</pre>
 
-              <h2>Deployment Architecture</h2>
+              <h2>{t('docs.deployment.architecture')}</h2>
               <MermaidDiagram
                 title="Production Deployment"
                 chart={`graph TB
@@ -1459,7 +1677,7 @@ npm start`}</pre>
     API3 --> LOGS`}
               />
 
-              <h2>Health Check</h2>
+              <h2>{t('docs.deployment.healthCheck')}</h2>
               <pre className="code-block">{`# API Health endpoint
 GET /health
 
@@ -1481,6 +1699,7 @@ GET /health
 
 // Security/Crypto Status Component
 function SecurityStatus() {
+  const { t } = useI18n();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1494,7 +1713,7 @@ function SecurityStatus() {
       if (data.success) {
         setStatus(data.status);
       } else {
-        setError(data.error || 'Failed to fetch status');
+        setError(data.error || t('security.fetchError'));
       }
     } catch (err) {
       setError(err.message);
@@ -1511,9 +1730,9 @@ function SecurityStatus() {
     <div className="tab-content">
       <div className="section-card">
         <div className="section-header">
-          <h2>Cryptographic Services Status</h2>
+          <h2>{t('security.title')}</h2>
           <button onClick={fetchStatus} disabled={loading} className="btn-secondary">
-            {loading ? 'Loading...' : 'Refresh'}
+            {loading ? t('common.loading') : t('security.refresh')}
           </button>
         </div>
 
@@ -1541,42 +1760,42 @@ function SecurityStatus() {
                   <h3>{status.hsm?.providerName || 'HSM'}</h3>
                 </div>
                 <span className={`status-indicator ${status.hsm?.enabled ? 'active' : 'inactive'}`}>
-                  {status.hsm?.enabled ? 'Enabled' : 'Disabled'}
+                  {status.hsm?.enabled ? t('security.enabled') : t('security.disabled')}
                 </span>
               </div>
               <div className="security-card-body">
                 <div className="security-detail">
-                  <span className="label">Mode</span>
-                  <span className="value">{status.hsm?.mode || 'N/A'}</span>
+                  <span className="label">{t('security.mode')}</span>
+                  <span className="value">{status.hsm?.mode || t('common.na')}</span>
                 </div>
                 <div className="security-detail">
-                  <span className="label">Provider</span>
-                  <span className="value">{status.hsm?.providerName || status.hsm?.provider || 'N/A'}</span>
+                  <span className="label">{t('security.provider')}</span>
+                  <span className="value">{status.hsm?.providerName || status.hsm?.provider || t('common.na')}</span>
                 </div>
                 <div className="security-detail">
-                  <span className="label">Initialized</span>
+                  <span className="label">{t('security.initialized')}</span>
                   <span className={`value ${status.hsm?.initialized ? 'yes' : 'no'}`}>
-                    {status.hsm?.initialized ? 'Yes' : 'No'}
+                    {status.hsm?.initialized ? t('common.yes') : t('common.no')}
                   </span>
                 </div>
                 {status.hsm?.slot !== undefined && (
                   <div className="security-detail">
-                    <span className="label">Slot</span>
+                    <span className="label">{t('security.slot')}</span>
                     <span className="value">{status.hsm?.slot}</span>
                   </div>
                 )}
                 {status.hsm?.keyLabel && (
                   <div className="security-detail">
-                    <span className="label">Key Label</span>
+                    <span className="label">{t('security.keyLabel')}</span>
                     <span className="value mono">{status.hsm?.keyLabel}</span>
                   </div>
                 )}
               </div>
               <div className="security-card-footer">
                 {status.hsm?.mode === 'hardware' ? (
-                  <span className="security-badge hardware">Hardware Cryptography</span>
+                  <span className="security-badge hardware">{t('security.hardwareCrypto')}</span>
                 ) : (
-                  <span className="security-badge software">Software Fallback</span>
+                  <span className="security-badge software">{t('security.softwareFallback')}</span>
                 )}
               </div>
             </div>
@@ -1589,30 +1808,30 @@ function SecurityStatus() {
                   <h3>HashiCorp Vault</h3>
                 </div>
                 <span className={`status-indicator ${status.vault?.enabled ? 'active' : 'inactive'}`}>
-                  {status.vault?.enabled ? 'Enabled' : 'Disabled'}
+                  {status.vault?.enabled ? t('security.enabled') : t('security.disabled')}
                 </span>
               </div>
               <div className="security-card-body">
                 <div className="security-detail">
-                  <span className="label">Authenticated</span>
+                  <span className="label">{t('security.authenticated')}</span>
                   <span className={`value ${status.vault?.authenticated ? 'yes' : 'no'}`}>
-                    {status.vault?.authenticated ? 'Yes' : 'No'}
+                    {status.vault?.authenticated ? t('common.yes') : t('common.no')}
                   </span>
                 </div>
                 {status.vault?.address && (
                   <div className="security-detail">
-                    <span className="label">Address</span>
+                    <span className="label">{t('security.address')}</span>
                     <span className="value mono">{status.vault?.address}</span>
                   </div>
                 )}
               </div>
               <div className="security-card-footer">
                 {status.vault?.authenticated ? (
-                  <span className="security-badge connected">Connected</span>
+                  <span className="security-badge connected">{t('security.connected')}</span>
                 ) : status.vault?.enabled ? (
-                  <span className="security-badge warning">Not Authenticated</span>
+                  <span className="security-badge warning">{t('security.notAuthenticated')}</span>
                 ) : (
-                  <span className="security-badge disabled">Disabled</span>
+                  <span className="security-badge disabled">{t('security.disabled')}</span>
                 )}
               </div>
             </div>
@@ -1620,30 +1839,30 @@ function SecurityStatus() {
             {/* Secrets Status Card */}
             <div className={`security-card ${status.secretsLoaded > 0 ? 'enabled' : 'disabled'}`}>
               <div className="security-card-header">
-                <h3>Sector Secrets</h3>
+                <h3>{t('security.sectorSecrets')}</h3>
                 <span className={`status-indicator ${status.secretsLoaded > 0 ? 'active' : 'inactive'}`}>
-                  {status.secretsLoaded > 0 ? 'Loaded' : 'Not Loaded'}
+                  {status.secretsLoaded > 0 ? t('security.loaded') : t('security.notLoaded')}
                 </span>
               </div>
               <div className="security-card-body">
                 <div className="security-detail">
-                  <span className="label">Secrets Count</span>
+                  <span className="label">{t('security.secretsCount')}</span>
                   <span className="value">{status.secretsLoaded || 0}</span>
                 </div>
                 <div className="security-detail">
-                  <span className="label">Source</span>
+                  <span className="label">{t('security.source')}</span>
                   <span className="value">
-                    {status.vault?.authenticated ? 'Vault' : 'Environment'}
+                    {status.vault?.authenticated ? 'Vault' : t('security.environment')}
                   </span>
                 </div>
               </div>
               <div className="security-card-footer">
                 {status.secretsLoaded >= 8 ? (
-                  <span className="security-badge success">All Sectors Configured</span>
+                  <span className="security-badge success">{t('security.allConfigured')}</span>
                 ) : status.secretsLoaded > 0 ? (
-                  <span className="security-badge warning">Partial Configuration</span>
+                  <span className="security-badge warning">{t('security.partialConfig')}</span>
                 ) : (
-                  <span className="security-badge error">No Secrets Loaded</span>
+                  <span className="security-badge error">{t('security.noSecrets')}</span>
                 )}
               </div>
             </div>
@@ -1652,7 +1871,7 @@ function SecurityStatus() {
 
         {!status && !loading && !error && (
           <div className="empty-state">
-            <p>Click "Refresh" to load security status</p>
+            <p>{t('security.clickRefresh')}</p>
           </div>
         )}
       </div>
@@ -1660,10 +1879,10 @@ function SecurityStatus() {
       {/* HSM Providers Info */}
       <div className="section-card">
         <div className="section-header">
-          <h2>Supported HSM Providers (Priority Order)</h2>
+          <h2>{t('security.hsmProviders')}</h2>
         </div>
         <p className="section-description">
-          Hardware TRNG is always prioritized over software CSPRNG. Production HSMs provide FIPS 140-2 Level 3 certified entropy.
+          {t('security.hsmProvidersDesc')}
         </p>
         <div className="providers-grid">
           {[

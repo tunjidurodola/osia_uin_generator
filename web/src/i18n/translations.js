@@ -154,6 +154,12 @@ export const translations = {
         success: 'Successfully generated {count} UINs',
         error: 'Failed to generate UINs'
       },
+      pregen: {
+        displayFormat: 'Display Format',
+        noFormat: 'No format (use default)',
+        formatHelp: 'Associates format for display when UINs are retrieved',
+        formatApplied: 'Format applied'
+      },
       lifecycle: {
         title: 'UIN Lifecycle Operations',
         subtitle: 'Test the complete UIN lifecycle: pre-assign → assign → revoke/retire',
@@ -293,8 +299,10 @@ export const translations = {
         overview: 'Overview',
         architecture: 'Architecture',
         api: 'API Reference',
+        formats: 'Display Formats',
         lifecycle: 'UIN Lifecycle',
-        security: 'Security'
+        security: 'Security',
+        deployment: 'Deployment'
       },
       overview: {
         title: 'OSIA UIN Generator',
@@ -350,17 +358,117 @@ export const translations = {
           pm2: 'Or use PM2 for production'
         }
       },
+      architecture: {
+        title: 'System Architecture',
+        highLevel: 'High-Level Overview',
+        component: 'Component Diagram',
+        dbSchema: 'Database Schema',
+        genModes: 'Generation Modes',
+        mode: 'Mode',
+        description: 'Description',
+        useCase: 'Use Case',
+        modes: {
+          foundationalDesc: 'High-entropy CSPRNG, no embedded PII',
+          foundationalUse: 'Primary national ID, lifelong identifier',
+          randomDesc: 'Configurable length, charset, checksum',
+          randomUse: 'Ad-hoc identifiers, testing',
+          structuredDesc: 'Template-based with placeholders',
+          structuredUse: 'Region/facility-encoded IDs',
+          sectorDesc: 'HMAC-derived, unlinkable tokens',
+          sectorUse: 'Health, tax, finance sector IDs'
+        }
+      },
       api: {
         title: 'API Reference',
         osiaEndpoint: 'OSIA-Compliant Endpoint',
+        osiaEndpointDesc: 'Generate a new UIN following the OSIA endpoint pattern.',
         infoEndpoints: 'Information Endpoints',
         poolEndpoints: 'Pool Management Endpoints',
         lifecycleEndpoints: 'UIN Lifecycle Endpoints',
         statelessEndpoints: 'Stateless Generation',
         queryParams: 'Query Parameters',
+        parameter: 'Parameter',
+        type: 'Type',
+        required: 'Required',
+        descriptionCol: 'Description',
+        transactionIdDesc: 'Transaction identifier for tracking',
         requestBody: 'Request Body',
         response: 'Response',
-        errorResponse: 'Error Response'
+        errorResponse: 'Error Response',
+        endpoints: {
+          health: 'Health check with HSM, Vault, and database status.',
+          cryptoStatus: 'Cryptographic services status (HSM, Vault, secrets).',
+          modes: 'List available generation modes.',
+          sectors: 'List supported sectors for tokenization.',
+          poolStats: 'Get pool statistics by scope.',
+          poolPeek: 'Preview top available UINs without claiming them.',
+          poolPreassign: 'Pre-assign a UIN from the pool. Changes status: AVAILABLE → PREASSIGNED.',
+          poolAssign: 'Assign a pre-assigned UIN to an entity. Changes status: PREASSIGNED → ASSIGNED.',
+          poolRevoke: 'Revoke an assigned UIN (fraud, error correction). Changes status: → REVOKED.',
+          poolRetire: 'Retire a UIN (end-of-life, death registration). Changes status: → RETIRED.',
+          uinPregenerate: 'Batch pre-generate UINs into the pool.',
+          uinClaim: 'Claim an available UIN (AVAILABLE → PREASSIGNED).',
+          uinAssign: 'Assign UIN to external reference (PREASSIGNED → ASSIGNED).',
+          uinRelease: 'Release a pre-assigned UIN back to pool (PREASSIGNED → AVAILABLE).',
+          uinStatus: 'Update UIN status (retire, revoke, etc.).',
+          uinCleanup: 'Release stale pre-assigned UINs back to available.',
+          uinLookup: 'Lookup UIN details by value.',
+          uinAudit: 'Get complete audit trail for a UIN.',
+          generate: 'Generate UIN without database persistence.',
+          // Format endpoints
+          formatsList: 'List all available UIN display formats.',
+          formatsGet: 'Get a specific format by ID or code.',
+          formatsCreate: 'Create a new display format configuration.',
+          formatsUpdate: 'Update an existing format configuration.',
+          formatsDelete: 'Delete a format (cannot delete default).',
+          formatsPreview: 'Preview how a UIN would look with a format.',
+          uinFormatSet: 'Set a format override for a specific UIN.',
+          uinFormatRemove: 'Remove format override, revert to default.'
+        },
+        formatEndpoints: 'Format Configuration Endpoints'
+      },
+      formats: {
+        title: 'UIN Display Formats',
+        description: 'Format configurations define how UINs are displayed without storing pre-formatted values. This is efficient as millions of UINs can share the same format rules.',
+        howItWorks: 'How It Works',
+        howItWorksDesc: 'Instead of storing formatted UINs (inefficient for millions of records), format rules are stored once and applied at display time.',
+        example: 'Example',
+        exampleRaw: 'Raw UIN',
+        exampleFormatted: 'Formatted',
+        configTable: 'Format Configuration',
+        field: 'Field',
+        fieldDesc: 'Description',
+        fields: {
+          formatCode: 'Unique identifier for the format (e.g., OSIA_STANDARD)',
+          separator: 'Character(s) inserted between segments (e.g., ".", "-", " ")',
+          segmentLengths: 'Array defining segment sizes (e.g., [5,4,4,4,2] for XXXXX.XXXX.XXXX.XXXX.XX)',
+          displayCase: 'Case transformation: upper, lower, or preserve',
+          prefix: 'Optional prefix added before UIN (e.g., "UIN-")',
+          suffix: 'Optional suffix added after UIN',
+          appliesTo: 'Auto-apply to UINs matching scope or mode'
+        },
+        defaultFormats: 'Default Formats',
+        defaultFormatsDesc: 'The system includes pre-configured formats:',
+        formatNames: {
+          osiaStandard: 'OSIA Standard - Dots every 5/4/4/4/2 characters',
+          osiaCompact: 'OSIA Compact - No separators',
+          osiaDashed: 'OSIA Dashed - Dashes instead of dots',
+          osiaSpaced: 'OSIA Spaced - Spaces between segments',
+          healthId: 'Health ID - Sector-specific format with prefix',
+          taxId: 'Tax ID - Traditional tax number format',
+          shortId: 'Short ID - 12-character format with dashes'
+        },
+        apiUsage: 'API Usage',
+        listFormats: 'List all formats',
+        previewFormat: 'Preview a format',
+        setOverride: 'Set per-UIN override',
+        batchBehavior: 'Batch Generation Behavior',
+        batchBehaviorDesc: 'When generating UINs in batch with a format specified:',
+        batchSmall: 'Small batches (≤10): Formatting is applied inline to each UIN',
+        batchLarge: 'Large batches (>10): A format_metadata section is appended instead, allowing downstream systems to apply formatting',
+        batchNote: 'This optimization prevents performance issues when generating hundreds of UINs.',
+        poolGeneration: 'Pool Pre-generation',
+        poolGenerationDesc: 'When pre-generating UINs into the pool, the format association is stored in uin_format_overrides table. The formatted UIN is never stored - only the association. When UINs are retrieved, formatting is applied dynamically.'
       },
       lifecycle: {
         title: 'UIN Lifecycle',
@@ -373,8 +481,9 @@ export const translations = {
           available: 'Pre-generated, ready to be claimed',
           preassigned: 'Claimed by system, not yet bound to PII',
           assigned: 'Bound to a person/entity reference',
-          retired: 'No longer active (death, etc.)',
-          revoked: 'Invalidated due to fraud/abuse'
+          retired: 'No longer active (death, end-of-life)',
+          revoked: 'Explicitly invalidated (fraud/abuse)',
+          terminal: 'Terminal state'
         },
         workflow: {
           title: 'Workflow: Civil Registration',
@@ -389,10 +498,15 @@ export const translations = {
           algorithm: 'Algorithm',
           purpose: 'Purpose',
           randomPrimary: 'Random Generation (Primary)',
+          randomPrimaryPurpose: 'FIPS 140-2 certified entropy from physical sources',
           randomFallback: 'Random Generation (Fallback)',
+          randomFallbackPurpose: 'Software CSPRNG when HSM unavailable',
           integrity: 'Integrity Hash',
+          integrityPurpose: 'UIN integrity verification',
           sectorDerivation: 'Sector Derivation',
-          checksum: 'Checksum'
+          sectorDerivationPurpose: 'Unlinkable sector tokens',
+          checksum: 'Checksum',
+          checksumPurpose: 'Transcription error detection'
         },
         provenance: {
           title: 'Entropy Provenance Tracking',
@@ -401,8 +515,66 @@ export const translations = {
         },
         sectorSecurity: {
           title: 'Sector Token Security'
+        },
+        bestPractices: {
+          title: 'Security Best Practices',
+          sectorSecrets: 'Sector Secrets',
+          sectorSecretsDesc: 'Use unique, high-entropy secrets per sector (min 32 bytes)',
+          dbSecurity: 'Database Security',
+          dbSecurityDesc: 'Row-level locking prevents race conditions',
+          noPii: 'No PII in UIN',
+          noPiiDesc: 'Foundational mode embeds no personal data',
+          constantTime: 'Constant-Time Comparison',
+          constantTimeDesc: 'Token verification uses timing-safe comparison',
+          auditImmutable: 'Audit Immutability',
+          auditImmutableDesc: 'Audit records are append-only',
+          tls: 'TLS Everywhere',
+          tlsDesc: 'All API communications over HTTPS'
+        },
+        auth: {
+          title: 'Authentication (Production)'
         }
+      },
+      deployment: {
+        title: 'Deployment',
+        envVars: 'Environment Variables',
+        pm2: 'PM2 Deployment',
+        docker: 'Docker Deployment',
+        architecture: 'Deployment Architecture',
+        healthCheck: 'Health Check'
       }
+    },
+
+    // Security tab
+    security: {
+      title: 'Cryptographic Services Status',
+      refresh: 'Refresh',
+      fetchError: 'Failed to fetch status',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      mode: 'Mode',
+      provider: 'Provider',
+      initialized: 'Initialized',
+      slot: 'Slot',
+      keyLabel: 'Key Label',
+      hardwareCrypto: 'Hardware Cryptography',
+      softwareFallback: 'Software Fallback',
+      authenticated: 'Authenticated',
+      address: 'Address',
+      connected: 'Connected',
+      notAuthenticated: 'Not Authenticated',
+      sectorSecrets: 'Sector Secrets',
+      loaded: 'Loaded',
+      notLoaded: 'Not Loaded',
+      secretsCount: 'Secrets Count',
+      source: 'Source',
+      environment: 'Environment',
+      allConfigured: 'All Sectors Configured',
+      partialConfig: 'Partial Configuration',
+      noSecrets: 'No Secrets Loaded',
+      clickRefresh: 'Click "Refresh" to load security status',
+      hsmProviders: 'Supported HSM Providers (Priority Order)',
+      hsmProvidersDesc: 'Hardware TRNG is always prioritized over software CSPRNG. Production HSMs provide FIPS 140-2 Level 3 certified entropy.'
     },
 
     // Footer
@@ -588,6 +760,12 @@ export const translations = {
         success: '{count} UINs erfolgreich generiert',
         error: 'UINs konnten nicht generiert werden'
       },
+      pregen: {
+        displayFormat: 'Anzeigeformat',
+        noFormat: 'Kein Format (Standard verwenden)',
+        formatHelp: 'Verknüpft das Format für die Anzeige beim Abrufen der UINs',
+        formatApplied: 'Format angewendet'
+      },
       lifecycle: {
         title: 'UIN-Lebenszyklus-Operationen',
         subtitle: 'Testen Sie den vollständigen UIN-Lebenszyklus: Vorbelegen → Zuweisen → Widerrufen/Stilllegen',
@@ -724,8 +902,10 @@ export const translations = {
         overview: 'Übersicht',
         architecture: 'Architektur',
         api: 'API-Referenz',
+        formats: 'Anzeigeformate',
         lifecycle: 'UIN-Lebenszyklus',
-        security: 'Sicherheit'
+        security: 'Sicherheit',
+        deployment: 'Bereitstellung'
       },
       overview: {
         title: 'OSIA UIN-Generator',
@@ -781,17 +961,117 @@ export const translations = {
           pm2: 'Oder PM2 für Produktion verwenden'
         }
       },
+      architecture: {
+        title: 'Systemarchitektur',
+        highLevel: 'Übersicht auf hoher Ebene',
+        component: 'Komponentendiagramm',
+        dbSchema: 'Datenbankschema',
+        genModes: 'Generierungsmodi',
+        mode: 'Modus',
+        description: 'Beschreibung',
+        useCase: 'Anwendungsfall',
+        modes: {
+          foundationalDesc: 'Hochentropisches CSPRNG, keine eingebetteten personenbezogenen Daten',
+          foundationalUse: 'Primäre nationale ID, lebenslanger Identifikator',
+          randomDesc: 'Konfigurierbare Länge, Zeichensatz, Prüfsumme',
+          randomUse: 'Ad-hoc-Identifikatoren, Tests',
+          structuredDesc: 'Vorlagenbasiert mit Platzhaltern',
+          structuredUse: 'Region-/Einrichtungs-codierte IDs',
+          sectorDesc: 'HMAC-abgeleitete, nicht verknüpfbare Tokens',
+          sectorUse: 'Gesundheits-, Steuer-, Finanzsektor-IDs'
+        }
+      },
       api: {
         title: 'API-Referenz',
         osiaEndpoint: 'OSIA-konformer Endpunkt',
+        osiaEndpointDesc: 'Generieren Sie eine neue UIN gemäß dem OSIA-Endpunktmuster.',
         infoEndpoints: 'Informationsendpunkte',
         poolEndpoints: 'Pool-Verwaltungsendpunkte',
         lifecycleEndpoints: 'UIN-Lebenszyklusendpunkte',
         statelessEndpoints: 'Zustandslose Generierung',
         queryParams: 'Abfrageparameter',
+        parameter: 'Parameter',
+        type: 'Typ',
+        required: 'Erforderlich',
+        descriptionCol: 'Beschreibung',
+        transactionIdDesc: 'Transaktionskennung zur Nachverfolgung',
         requestBody: 'Anfragekörper',
         response: 'Antwort',
-        errorResponse: 'Fehlerantwort'
+        errorResponse: 'Fehlerantwort',
+        endpoints: {
+          health: 'Gesundheitscheck mit HSM-, Vault- und Datenbankstatus.',
+          cryptoStatus: 'Status kryptografischer Dienste (HSM, Vault, Geheimnisse).',
+          modes: 'Verfügbare Generierungsmodi auflisten.',
+          sectors: 'Unterstützte Sektoren für Tokenisierung auflisten.',
+          poolStats: 'Pool-Statistiken nach Bereich abrufen.',
+          poolPeek: 'Vorschau der verfügbaren UINs ohne Reservierung.',
+          poolPreassign: 'UIN aus Pool vorbelegen. Status: VERFÜGBAR → VORBELEGT.',
+          poolAssign: 'Vorbelegte UIN einer Entität zuweisen. Status: VORBELEGT → ZUGEWIESEN.',
+          poolRevoke: 'Zugewiesene UIN widerrufen (Betrug, Fehlerkorrektur). Status: → WIDERRUFEN.',
+          poolRetire: 'UIN stilllegen (Lebensende, Sterberegistrierung). Status: → STILLGELEGT.',
+          uinPregenerate: 'UINs stapelweise in den Pool vorgenerieren.',
+          uinClaim: 'Verfügbare UIN reservieren (VERFÜGBAR → VORBELEGT).',
+          uinAssign: 'UIN externer Referenz zuweisen (VORBELEGT → ZUGEWIESEN).',
+          uinRelease: 'Vorbelegte UIN zurück in Pool freigeben (VORBELEGT → VERFÜGBAR).',
+          uinStatus: 'UIN-Status aktualisieren (stilllegen, widerrufen, usw.).',
+          uinCleanup: 'Veraltete vorbelegte UINs freigeben.',
+          uinLookup: 'UIN-Details nach Wert nachschlagen.',
+          uinAudit: 'Vollständiges Audit-Protokoll für UIN abrufen.',
+          generate: 'UIN ohne Datenbankpersistenz generieren.',
+          // Format endpoints
+          formatsList: 'Alle verfügbaren UIN-Anzeigeformate auflisten.',
+          formatsGet: 'Ein bestimmtes Format nach ID oder Code abrufen.',
+          formatsCreate: 'Neue Anzeigeformat-Konfiguration erstellen.',
+          formatsUpdate: 'Bestehende Format-Konfiguration aktualisieren.',
+          formatsDelete: 'Format löschen (Standard kann nicht gelöscht werden).',
+          formatsPreview: 'Vorschau, wie eine UIN mit einem Format aussieht.',
+          uinFormatSet: 'Format-Überschreibung für eine bestimmte UIN festlegen.',
+          uinFormatRemove: 'Format-Überschreibung entfernen, zum Standard zurückkehren.'
+        },
+        formatEndpoints: 'Format-Konfigurations-Endpunkte'
+      },
+      formats: {
+        title: 'UIN-Anzeigeformate',
+        description: 'Format-Konfigurationen definieren, wie UINs angezeigt werden, ohne vorformatierte Werte zu speichern. Dies ist effizient, da Millionen von UINs dieselben Formatregeln teilen können.',
+        howItWorks: 'Funktionsweise',
+        howItWorksDesc: 'Anstatt formatierte UINs zu speichern (ineffizient bei Millionen von Datensätzen), werden Formatregeln einmal gespeichert und zur Anzeigezeit angewendet.',
+        example: 'Beispiel',
+        exampleRaw: 'Rohe UIN',
+        exampleFormatted: 'Formatiert',
+        configTable: 'Format-Konfiguration',
+        field: 'Feld',
+        fieldDesc: 'Beschreibung',
+        fields: {
+          formatCode: 'Eindeutiger Bezeichner für das Format (z.B. OSIA_STANDARD)',
+          separator: 'Zeichen zwischen Segmenten (z.B. ".", "-", " ")',
+          segmentLengths: 'Array zur Definition der Segmentgrößen (z.B. [5,4,4,4,2] für XXXXX.XXXX.XXXX.XXXX.XX)',
+          displayCase: 'Groß-/Kleinschreibung: upper, lower oder preserve',
+          prefix: 'Optionales Präfix vor der UIN (z.B. "UIN-")',
+          suffix: 'Optionales Suffix nach der UIN',
+          appliesTo: 'Automatisch auf UINs mit passendem Scope oder Modus anwenden'
+        },
+        defaultFormats: 'Standardformate',
+        defaultFormatsDesc: 'Das System enthält vorkonfigurierte Formate:',
+        formatNames: {
+          osiaStandard: 'OSIA Standard - Punkte alle 5/4/4/4/2 Zeichen',
+          osiaCompact: 'OSIA Kompakt - Keine Trennzeichen',
+          osiaDashed: 'OSIA Gestrichelt - Bindestriche statt Punkte',
+          osiaSpaced: 'OSIA Leerzeichen - Leerzeichen zwischen Segmenten',
+          healthId: 'Gesundheits-ID - Sektorspezifisches Format mit Präfix',
+          taxId: 'Steuer-ID - Traditionelles Steuernummernformat',
+          shortId: 'Kurz-ID - 12-Zeichen-Format mit Bindestrichen'
+        },
+        apiUsage: 'API-Verwendung',
+        listFormats: 'Alle Formate auflisten',
+        previewFormat: 'Format-Vorschau',
+        setOverride: 'Pro-UIN-Überschreibung festlegen',
+        batchBehavior: 'Verhalten bei Stapelgenerierung',
+        batchBehaviorDesc: 'Bei der Stapelgenerierung von UINs mit festgelegtem Format:',
+        batchSmall: 'Kleine Stapel (≤10): Formatierung wird inline auf jede UIN angewendet',
+        batchLarge: 'Große Stapel (>10): Stattdessen wird ein format_metadata-Abschnitt angehängt, der nachgelagerten Systemen die Formatierung ermöglicht',
+        batchNote: 'Diese Optimierung verhindert Leistungsprobleme bei der Generierung von Hunderten von UINs.',
+        poolGeneration: 'Pool-Vorgenerierung',
+        poolGenerationDesc: 'Bei der Vorgenerierung von UINs in den Pool wird die Format-Zuordnung in der Tabelle uin_format_overrides gespeichert. Die formatierte UIN wird nie gespeichert - nur die Zuordnung. Beim Abrufen von UINs wird die Formatierung dynamisch angewendet.'
       },
       lifecycle: {
         title: 'UIN-Lebenszyklus',
@@ -805,7 +1085,8 @@ export const translations = {
           preassigned: 'Vom System reserviert, noch nicht an PII gebunden',
           assigned: 'An eine Person/Entität gebunden',
           retired: 'Nicht mehr aktiv (Tod usw.)',
-          revoked: 'Aufgrund von Betrug/Missbrauch ungültig gemacht'
+          revoked: 'Aufgrund von Betrug/Missbrauch ungültig gemacht',
+          terminal: 'Endzustand'
         },
         workflow: {
           title: 'Arbeitsablauf: Personenstandsregistrierung',
@@ -820,10 +1101,15 @@ export const translations = {
           algorithm: 'Algorithmus',
           purpose: 'Zweck',
           randomPrimary: 'Zufallsgenerierung (Primär)',
+          randomPrimaryPurpose: 'FIPS 140-2 zertifizierte Entropie aus physischen Quellen',
           randomFallback: 'Zufallsgenerierung (Fallback)',
+          randomFallbackPurpose: 'Software-CSPRNG wenn HSM nicht verfügbar',
           integrity: 'Integritäts-Hash',
+          integrityPurpose: 'UIN-Integritätsüberprüfung',
           sectorDerivation: 'Sektor-Ableitung',
-          checksum: 'Prüfsumme'
+          sectorDerivationPurpose: 'Nicht verknüpfbare Sektor-Tokens',
+          checksum: 'Prüfsumme',
+          checksumPurpose: 'Erkennung von Eingabefehlern'
         },
         provenance: {
           title: 'Entropie-Herkunftsverfolgung',
@@ -832,8 +1118,66 @@ export const translations = {
         },
         sectorSecurity: {
           title: 'Sektor-Token-Sicherheit'
+        },
+        bestPractices: {
+          title: 'Bewährte Sicherheitspraktiken',
+          sectorSecrets: 'Sektor-Geheimnisse',
+          sectorSecretsDesc: 'Verwenden Sie einzigartige, hochentropische Geheimnisse pro Sektor (min. 32 Bytes)',
+          dbSecurity: 'Datenbanksicherheit',
+          dbSecurityDesc: 'Zeilensperren verhindern Race Conditions',
+          noPii: 'Keine PII in UIN',
+          noPiiDesc: 'Grundlegender Modus enthält keine personenbezogenen Daten',
+          constantTime: 'Zeitkonstanter Vergleich',
+          constantTimeDesc: 'Token-Verifizierung verwendet zeitkonstanten Vergleich',
+          auditImmutable: 'Unveränderliches Audit',
+          auditImmutableDesc: 'Audit-Einträge sind nur hinzufügbar',
+          tls: 'TLS überall',
+          tlsDesc: 'Alle API-Kommunikation über HTTPS'
+        },
+        auth: {
+          title: 'Authentifizierung (Produktion)'
         }
+      },
+      deployment: {
+        title: 'Bereitstellung',
+        envVars: 'Umgebungsvariablen',
+        pm2: 'PM2-Bereitstellung',
+        docker: 'Docker-Bereitstellung',
+        architecture: 'Bereitstellungsarchitektur',
+        healthCheck: 'Gesundheitscheck'
       }
+    },
+
+    // Security tab (SecurityStatus component)
+    security: {
+      title: 'Status der kryptografischen Dienste',
+      refresh: 'Aktualisieren',
+      fetchError: 'Status konnte nicht abgerufen werden',
+      enabled: 'Aktiviert',
+      disabled: 'Deaktiviert',
+      mode: 'Modus',
+      provider: 'Anbieter',
+      initialized: 'Initialisiert',
+      slot: 'Slot',
+      keyLabel: 'Schlüsselbezeichnung',
+      hardwareCrypto: 'Hardware-Kryptografie',
+      softwareFallback: 'Software-Fallback',
+      authenticated: 'Authentifiziert',
+      address: 'Adresse',
+      connected: 'Verbunden',
+      notAuthenticated: 'Nicht authentifiziert',
+      sectorSecrets: 'Sektor-Geheimnisse',
+      loaded: 'Geladen',
+      notLoaded: 'Nicht geladen',
+      secretsCount: 'Anzahl Geheimnisse',
+      source: 'Quelle',
+      environment: 'Umgebung',
+      allConfigured: 'Alle Sektoren konfiguriert',
+      partialConfig: 'Teilweise Konfiguration',
+      noSecrets: 'Keine Geheimnisse geladen',
+      clickRefresh: 'Klicken Sie auf "Aktualisieren" um den Sicherheitsstatus zu laden',
+      hsmProviders: 'Unterstützte HSM-Anbieter (Prioritätsreihenfolge)',
+      hsmProvidersDesc: 'Hardware-TRNG wird immer gegenüber Software-CSPRNG bevorzugt. Produktions-HSMs bieten FIPS 140-2 Level 3 zertifizierte Entropie.'
     },
 
     footer: {
@@ -1016,6 +1360,12 @@ export const translations = {
         success: '{count} UINs générés avec succès',
         error: 'Échec de la génération des UINs'
       },
+      pregen: {
+        displayFormat: "Format d'affichage",
+        noFormat: 'Pas de format (utiliser par défaut)',
+        formatHelp: "Associe le format pour l'affichage lors de la récupération des UINs",
+        formatApplied: 'Format appliqué'
+      },
       lifecycle: {
         title: 'Opérations du cycle de vie UIN',
         subtitle: 'Testez le cycle de vie complet : pré-attribuer → attribuer → révoquer/retirer',
@@ -1152,8 +1502,10 @@ export const translations = {
         overview: 'Aperçu',
         architecture: 'Architecture',
         api: 'Référence API',
+        formats: "Formats d'affichage",
         lifecycle: 'Cycle de vie UIN',
-        security: 'Sécurité'
+        security: 'Sécurité',
+        deployment: 'Déploiement'
       },
       overview: {
         title: 'Générateur OSIA UIN',
@@ -1209,17 +1561,117 @@ export const translations = {
           pm2: 'Ou utiliser PM2 pour la production'
         }
       },
+      architecture: {
+        title: 'Architecture du système',
+        highLevel: 'Vue d\'ensemble de haut niveau',
+        component: 'Diagramme des composants',
+        dbSchema: 'Schéma de base de données',
+        genModes: 'Modes de génération',
+        mode: 'Mode',
+        description: 'Description',
+        useCase: 'Cas d\'utilisation',
+        modes: {
+          foundationalDesc: 'CSPRNG à haute entropie, sans données personnelles intégrées',
+          foundationalUse: 'ID national primaire, identifiant à vie',
+          randomDesc: 'Longueur, jeu de caractères et somme de contrôle configurables',
+          randomUse: 'Identifiants ad-hoc, tests',
+          structuredDesc: 'Basé sur modèle avec variables de substitution',
+          structuredUse: 'IDs encodés par région/établissement',
+          sectorDesc: 'Jetons dérivés HMAC, non liables',
+          sectorUse: 'IDs secteur santé, fiscal, finance'
+        }
+      },
       api: {
         title: 'Référence API',
         osiaEndpoint: 'Endpoint conforme OSIA',
+        osiaEndpointDesc: 'Générer un nouvel UIN selon le modèle d\'endpoint OSIA.',
         infoEndpoints: "Endpoints d'information",
         poolEndpoints: 'Endpoints de gestion du pool',
         lifecycleEndpoints: 'Endpoints du cycle de vie UIN',
         statelessEndpoints: 'Génération sans état',
         queryParams: 'Paramètres de requête',
+        parameter: 'Paramètre',
+        type: 'Type',
+        required: 'Requis',
+        descriptionCol: 'Description',
+        transactionIdDesc: 'Identifiant de transaction pour le suivi',
         requestBody: 'Corps de la requête',
         response: 'Réponse',
-        errorResponse: "Réponse d'erreur"
+        errorResponse: "Réponse d'erreur",
+        endpoints: {
+          health: 'Contrôle de santé avec état HSM, Vault et base de données.',
+          cryptoStatus: 'État des services cryptographiques (HSM, Vault, secrets).',
+          modes: 'Lister les modes de génération disponibles.',
+          sectors: 'Lister les secteurs pris en charge pour la tokenisation.',
+          poolStats: 'Obtenir les statistiques du pool par portée.',
+          poolPeek: 'Aperçu des UINs disponibles sans les réserver.',
+          poolPreassign: 'Pré-attribuer un UIN du pool. Statut : DISPONIBLE → PRÉ-ATTRIBUÉ.',
+          poolAssign: 'Attribuer un UIN pré-attribué à une entité. Statut : PRÉ-ATTRIBUÉ → ATTRIBUÉ.',
+          poolRevoke: 'Révoquer un UIN attribué (fraude, correction). Statut : → RÉVOQUÉ.',
+          poolRetire: 'Retirer un UIN (fin de vie, décès). Statut : → RETIRÉ.',
+          uinPregenerate: 'Pré-générer des UINs en lot dans le pool.',
+          uinClaim: 'Réserver un UIN disponible (DISPONIBLE → PRÉ-ATTRIBUÉ).',
+          uinAssign: 'Attribuer l\'UIN à une référence externe (PRÉ-ATTRIBUÉ → ATTRIBUÉ).',
+          uinRelease: 'Libérer un UIN pré-attribué dans le pool (PRÉ-ATTRIBUÉ → DISPONIBLE).',
+          uinStatus: 'Mettre à jour le statut UIN (retirer, révoquer, etc.).',
+          uinCleanup: 'Libérer les UINs pré-attribués obsolètes.',
+          uinLookup: 'Rechercher les détails d\'un UIN par valeur.',
+          uinAudit: 'Obtenir la piste d\'audit complète pour un UIN.',
+          generate: 'Générer un UIN sans persistance en base de données.',
+          // Format endpoints
+          formatsList: 'Lister tous les formats d\'affichage UIN disponibles.',
+          formatsGet: 'Obtenir un format spécifique par ID ou code.',
+          formatsCreate: 'Créer une nouvelle configuration de format d\'affichage.',
+          formatsUpdate: 'Mettre à jour une configuration de format existante.',
+          formatsDelete: 'Supprimer un format (impossible de supprimer le format par défaut).',
+          formatsPreview: 'Aperçu de l\'apparence d\'un UIN avec un format.',
+          uinFormatSet: 'Définir un format personnalisé pour un UIN spécifique.',
+          uinFormatRemove: 'Supprimer le format personnalisé, revenir au défaut.'
+        },
+        formatEndpoints: 'Endpoints de configuration des formats'
+      },
+      formats: {
+        title: 'Formats d\'affichage UIN',
+        description: 'Les configurations de format définissent comment les UINs sont affichés sans stocker de valeurs préformatées. C\'est efficace car des millions d\'UINs peuvent partager les mêmes règles de format.',
+        howItWorks: 'Fonctionnement',
+        howItWorksDesc: 'Au lieu de stocker des UINs formatés (inefficace pour des millions d\'enregistrements), les règles de format sont stockées une fois et appliquées lors de l\'affichage.',
+        example: 'Exemple',
+        exampleRaw: 'UIN brut',
+        exampleFormatted: 'Formaté',
+        configTable: 'Configuration du format',
+        field: 'Champ',
+        fieldDesc: 'Description',
+        fields: {
+          formatCode: 'Identifiant unique pour le format (ex: OSIA_STANDARD)',
+          separator: 'Caractère(s) inséré(s) entre les segments (ex: ".", "-", " ")',
+          segmentLengths: 'Tableau définissant les tailles de segment (ex: [5,4,4,4,2] pour XXXXX.XXXX.XXXX.XXXX.XX)',
+          displayCase: 'Transformation de casse : upper, lower ou preserve',
+          prefix: 'Préfixe optionnel avant l\'UIN (ex: "UIN-")',
+          suffix: 'Suffixe optionnel après l\'UIN',
+          appliesTo: 'Appliquer automatiquement aux UINs correspondant au scope ou mode'
+        },
+        defaultFormats: 'Formats par défaut',
+        defaultFormatsDesc: 'Le système inclut des formats préconfigurés :',
+        formatNames: {
+          osiaStandard: 'OSIA Standard - Points tous les 5/4/4/4/2 caractères',
+          osiaCompact: 'OSIA Compact - Sans séparateurs',
+          osiaDashed: 'OSIA Tirets - Tirets au lieu de points',
+          osiaSpaced: 'OSIA Espaces - Espaces entre les segments',
+          healthId: 'ID Santé - Format sectoriel avec préfixe',
+          taxId: 'ID Fiscal - Format traditionnel de numéro fiscal',
+          shortId: 'ID Court - Format 12 caractères avec tirets'
+        },
+        apiUsage: 'Utilisation de l\'API',
+        listFormats: 'Lister tous les formats',
+        previewFormat: 'Aperçu d\'un format',
+        setOverride: 'Définir un format personnalisé par UIN',
+        batchBehavior: 'Comportement de génération par lot',
+        batchBehaviorDesc: 'Lors de la génération d\'UINs par lot avec un format spécifié :',
+        batchSmall: 'Petits lots (≤10) : Le formatage est appliqué en ligne à chaque UIN',
+        batchLarge: 'Grands lots (>10) : Une section format_metadata est ajoutée à la place, permettant aux systèmes en aval d\'appliquer le formatage',
+        batchNote: 'Cette optimisation évite les problèmes de performance lors de la génération de centaines d\'UINs.',
+        poolGeneration: 'Pré-génération du pool',
+        poolGenerationDesc: 'Lors de la pré-génération d\'UINs dans le pool, l\'association de format est stockée dans la table uin_format_overrides. L\'UIN formaté n\'est jamais stocké - seulement l\'association. Lors de la récupération des UINs, le formatage est appliqué dynamiquement.'
       },
       lifecycle: {
         title: 'Cycle de vie UIN',
@@ -1232,8 +1684,9 @@ export const translations = {
           available: 'Pré-généré, prêt à être réservé',
           preassigned: 'Réservé par le système, pas encore lié aux données personnelles',
           assigned: 'Lié à une personne/entité',
-          retired: 'Plus actif (décès, etc.)',
-          revoked: 'Invalidé pour fraude/abus'
+          retired: 'N\'est plus actif (décès, etc.)',
+          revoked: 'Invalidé pour fraude/abus',
+          terminal: 'État terminal'
         },
         workflow: {
           title: "Flux de travail : Enregistrement d'état civil",
@@ -1248,10 +1701,15 @@ export const translations = {
           algorithm: 'Algorithme',
           purpose: 'Objectif',
           randomPrimary: 'Génération aléatoire (Primaire)',
+          randomPrimaryPurpose: 'Entropie certifiée FIPS 140-2 provenant de sources physiques',
           randomFallback: 'Génération aléatoire (Secours)',
+          randomFallbackPurpose: 'CSPRNG logiciel lorsque le HSM n\'est pas disponible',
           integrity: "Hash d'intégrité",
+          integrityPurpose: 'Vérification de l\'intégrité UIN',
           sectorDerivation: 'Dérivation sectorielle',
-          checksum: 'Somme de contrôle'
+          sectorDerivationPurpose: 'Jetons sectoriels non liables',
+          checksum: 'Somme de contrôle',
+          checksumPurpose: 'Détection des erreurs de transcription'
         },
         provenance: {
           title: "Suivi de la provenance de l'entropie",
@@ -1260,8 +1718,66 @@ export const translations = {
         },
         sectorSecurity: {
           title: 'Sécurité des jetons sectoriels'
+        },
+        bestPractices: {
+          title: 'Bonnes pratiques de sécurité',
+          sectorSecrets: 'Secrets sectoriels',
+          sectorSecretsDesc: 'Utilisez des secrets uniques à haute entropie par secteur (min. 32 octets)',
+          dbSecurity: 'Sécurité de la base de données',
+          dbSecurityDesc: 'Le verrouillage par ligne empêche les conditions de concurrence',
+          noPii: 'Pas de données personnelles dans l\'UIN',
+          noPiiDesc: 'Le mode fondamental n\'intègre aucune donnée personnelle',
+          constantTime: 'Comparaison à temps constant',
+          constantTimeDesc: 'La vérification des jetons utilise une comparaison sécurisée',
+          auditImmutable: 'Audit immuable',
+          auditImmutableDesc: 'Les enregistrements d\'audit sont en ajout uniquement',
+          tls: 'TLS partout',
+          tlsDesc: 'Toutes les communications API via HTTPS'
+        },
+        auth: {
+          title: 'Authentification (Production)'
         }
+      },
+      deployment: {
+        title: 'Déploiement',
+        envVars: 'Variables d\'environnement',
+        pm2: 'Déploiement PM2',
+        docker: 'Déploiement Docker',
+        architecture: 'Architecture de déploiement',
+        healthCheck: 'Contrôle de santé'
       }
+    },
+
+    // Security tab (SecurityStatus component)
+    security: {
+      title: 'État des services cryptographiques',
+      refresh: 'Actualiser',
+      fetchError: 'Échec de récupération du statut',
+      enabled: 'Activé',
+      disabled: 'Désactivé',
+      mode: 'Mode',
+      provider: 'Fournisseur',
+      initialized: 'Initialisé',
+      slot: 'Slot',
+      keyLabel: 'Libellé de clé',
+      hardwareCrypto: 'Cryptographie matérielle',
+      softwareFallback: 'Secours logiciel',
+      authenticated: 'Authentifié',
+      address: 'Adresse',
+      connected: 'Connecté',
+      notAuthenticated: 'Non authentifié',
+      sectorSecrets: 'Secrets sectoriels',
+      loaded: 'Chargé',
+      notLoaded: 'Non chargé',
+      secretsCount: 'Nombre de secrets',
+      source: 'Source',
+      environment: 'Environnement',
+      allConfigured: 'Tous les secteurs configurés',
+      partialConfig: 'Configuration partielle',
+      noSecrets: 'Aucun secret chargé',
+      clickRefresh: 'Cliquez sur "Actualiser" pour charger l\'état de sécurité',
+      hsmProviders: 'Fournisseurs HSM pris en charge (Ordre de priorité)',
+      hsmProvidersDesc: 'Le TRNG matériel est toujours prioritaire sur le CSPRNG logiciel. Les HSM de production fournissent une entropie certifiée FIPS 140-2 Niveau 3.'
     },
 
     footer: {
@@ -1444,6 +1960,12 @@ export const translations = {
         success: '{count} UINs generados exitosamente',
         error: 'Error al generar UINs'
       },
+      pregen: {
+        displayFormat: 'Formato de visualización',
+        noFormat: 'Sin formato (usar predeterminado)',
+        formatHelp: 'Asocia el formato para la visualización cuando se recuperan los UINs',
+        formatApplied: 'Formato aplicado'
+      },
       lifecycle: {
         title: 'Operaciones del ciclo de vida UIN',
         subtitle: 'Pruebe el ciclo de vida completo: preasignar → asignar → revocar/retirar',
@@ -1580,8 +2102,10 @@ export const translations = {
         overview: 'Descripción general',
         architecture: 'Arquitectura',
         api: 'Referencia API',
+        formats: 'Formatos de visualización',
         lifecycle: 'Ciclo de vida UIN',
-        security: 'Seguridad'
+        security: 'Seguridad',
+        deployment: 'Implementación'
       },
       overview: {
         title: 'Generador OSIA UIN',
@@ -1637,17 +2161,117 @@ export const translations = {
           pm2: 'O usar PM2 para producción'
         }
       },
+      architecture: {
+        title: 'Arquitectura del sistema',
+        highLevel: 'Visión general de alto nivel',
+        component: 'Diagrama de componentes',
+        dbSchema: 'Esquema de base de datos',
+        genModes: 'Modos de generación',
+        mode: 'Modo',
+        description: 'Descripción',
+        useCase: 'Caso de uso',
+        modes: {
+          foundationalDesc: 'CSPRNG de alta entropía, sin datos personales integrados',
+          foundationalUse: 'ID nacional primario, identificador vitalicio',
+          randomDesc: 'Longitud, juego de caracteres y suma de verificación configurables',
+          randomUse: 'Identificadores ad-hoc, pruebas',
+          structuredDesc: 'Basado en plantilla con marcadores de posición',
+          structuredUse: 'IDs codificados por región/instalación',
+          sectorDesc: 'Tokens derivados HMAC, no vinculables',
+          sectorUse: 'IDs sector salud, fiscal, finanzas'
+        }
+      },
       api: {
         title: 'Referencia API',
         osiaEndpoint: 'Endpoint compatible con OSIA',
+        osiaEndpointDesc: 'Generar un nuevo UIN según el patrón de endpoint OSIA.',
         infoEndpoints: 'Endpoints de información',
         poolEndpoints: 'Endpoints de gestión del pool',
         lifecycleEndpoints: 'Endpoints del ciclo de vida UIN',
         statelessEndpoints: 'Generación sin estado',
         queryParams: 'Parámetros de consulta',
+        parameter: 'Parámetro',
+        type: 'Tipo',
+        required: 'Requerido',
+        descriptionCol: 'Descripción',
+        transactionIdDesc: 'Identificador de transacción para seguimiento',
         requestBody: 'Cuerpo de la solicitud',
         response: 'Respuesta',
-        errorResponse: 'Respuesta de error'
+        errorResponse: 'Respuesta de error',
+        endpoints: {
+          health: 'Comprobación de estado con HSM, Vault y base de datos.',
+          cryptoStatus: 'Estado de servicios criptográficos (HSM, Vault, secretos).',
+          modes: 'Listar modos de generación disponibles.',
+          sectors: 'Listar sectores compatibles para tokenización.',
+          poolStats: 'Obtener estadísticas del pool por ámbito.',
+          poolPeek: 'Vista previa de UINs disponibles sin reservarlos.',
+          poolPreassign: 'Preasignar un UIN del pool. Estado: DISPONIBLE → PREASIGNADO.',
+          poolAssign: 'Asignar un UIN preasignado a una entidad. Estado: PREASIGNADO → ASIGNADO.',
+          poolRevoke: 'Revocar un UIN asignado (fraude, corrección). Estado: → REVOCADO.',
+          poolRetire: 'Retirar un UIN (fin de vida, defunción). Estado: → RETIRADO.',
+          uinPregenerate: 'Pregenerar UINs en lote al pool.',
+          uinClaim: 'Reservar un UIN disponible (DISPONIBLE → PREASIGNADO).',
+          uinAssign: 'Asignar UIN a referencia externa (PREASIGNADO → ASIGNADO).',
+          uinRelease: 'Liberar UIN preasignado al pool (PREASIGNADO → DISPONIBLE).',
+          uinStatus: 'Actualizar estado UIN (retirar, revocar, etc.).',
+          uinCleanup: 'Liberar UINs preasignados obsoletos.',
+          uinLookup: 'Buscar detalles de UIN por valor.',
+          uinAudit: 'Obtener registro de auditoría completo para un UIN.',
+          generate: 'Generar UIN sin persistencia en base de datos.',
+          // Format endpoints
+          formatsList: 'Listar todos los formatos de visualización UIN disponibles.',
+          formatsGet: 'Obtener un formato específico por ID o código.',
+          formatsCreate: 'Crear una nueva configuración de formato de visualización.',
+          formatsUpdate: 'Actualizar una configuración de formato existente.',
+          formatsDelete: 'Eliminar un formato (no se puede eliminar el predeterminado).',
+          formatsPreview: 'Vista previa de cómo se vería un UIN con un formato.',
+          uinFormatSet: 'Establecer un formato personalizado para un UIN específico.',
+          uinFormatRemove: 'Eliminar formato personalizado, volver al predeterminado.'
+        },
+        formatEndpoints: 'Endpoints de configuración de formatos'
+      },
+      formats: {
+        title: 'Formatos de visualización UIN',
+        description: 'Las configuraciones de formato definen cómo se muestran los UINs sin almacenar valores preformateados. Esto es eficiente ya que millones de UINs pueden compartir las mismas reglas de formato.',
+        howItWorks: 'Cómo funciona',
+        howItWorksDesc: 'En lugar de almacenar UINs formateados (ineficiente para millones de registros), las reglas de formato se almacenan una vez y se aplican en el momento de la visualización.',
+        example: 'Ejemplo',
+        exampleRaw: 'UIN sin formato',
+        exampleFormatted: 'Formateado',
+        configTable: 'Configuración del formato',
+        field: 'Campo',
+        fieldDesc: 'Descripción',
+        fields: {
+          formatCode: 'Identificador único para el formato (ej: OSIA_STANDARD)',
+          separator: 'Carácter(es) insertado(s) entre segmentos (ej: ".", "-", " ")',
+          segmentLengths: 'Array que define los tamaños de segmento (ej: [5,4,4,4,2] para XXXXX.XXXX.XXXX.XXXX.XX)',
+          displayCase: 'Transformación de mayúsculas/minúsculas: upper, lower o preserve',
+          prefix: 'Prefijo opcional antes del UIN (ej: "UIN-")',
+          suffix: 'Sufijo opcional después del UIN',
+          appliesTo: 'Aplicar automáticamente a UINs que coincidan con el scope o modo'
+        },
+        defaultFormats: 'Formatos predeterminados',
+        defaultFormatsDesc: 'El sistema incluye formatos preconfigurados:',
+        formatNames: {
+          osiaStandard: 'OSIA Estándar - Puntos cada 5/4/4/4/2 caracteres',
+          osiaCompact: 'OSIA Compacto - Sin separadores',
+          osiaDashed: 'OSIA Guiones - Guiones en lugar de puntos',
+          osiaSpaced: 'OSIA Espacios - Espacios entre segmentos',
+          healthId: 'ID Salud - Formato sectorial con prefijo',
+          taxId: 'ID Fiscal - Formato tradicional de número fiscal',
+          shortId: 'ID Corto - Formato de 12 caracteres con guiones'
+        },
+        apiUsage: 'Uso de la API',
+        listFormats: 'Listar todos los formatos',
+        previewFormat: 'Vista previa de un formato',
+        setOverride: 'Establecer formato personalizado por UIN',
+        batchBehavior: 'Comportamiento de generación por lotes',
+        batchBehaviorDesc: 'Al generar UINs por lotes con un formato especificado:',
+        batchSmall: 'Lotes pequeños (≤10): El formato se aplica en línea a cada UIN',
+        batchLarge: 'Lotes grandes (>10): Se añade una sección format_metadata en su lugar, permitiendo que los sistemas posteriores apliquen el formato',
+        batchNote: 'Esta optimización evita problemas de rendimiento al generar cientos de UINs.',
+        poolGeneration: 'Pre-generación del pool',
+        poolGenerationDesc: 'Al pre-generar UINs en el pool, la asociación de formato se almacena en la tabla uin_format_overrides. El UIN formateado nunca se almacena - solo la asociación. Al recuperar los UINs, el formato se aplica dinámicamente.'
       },
       lifecycle: {
         title: 'Ciclo de vida UIN',
@@ -1660,8 +2284,9 @@ export const translations = {
           available: 'Pregenerado, listo para ser reservado',
           preassigned: 'Reservado por el sistema, aún no vinculado a datos personales',
           assigned: 'Vinculado a una persona/entidad',
-          retired: 'Ya no activo (fallecimiento, etc.)',
-          revoked: 'Invalidado por fraude/abuso'
+          retired: 'Ya no está activo (fallecimiento, etc.)',
+          revoked: 'Invalidado por fraude/abuso',
+          terminal: 'Estado terminal'
         },
         workflow: {
           title: 'Flujo de trabajo: Registro civil',
@@ -1676,10 +2301,15 @@ export const translations = {
           algorithm: 'Algoritmo',
           purpose: 'Propósito',
           randomPrimary: 'Generación aleatoria (Primario)',
+          randomPrimaryPurpose: 'Entropía certificada FIPS 140-2 de fuentes físicas',
           randomFallback: 'Generación aleatoria (Respaldo)',
+          randomFallbackPurpose: 'CSPRNG software cuando HSM no está disponible',
           integrity: 'Hash de integridad',
+          integrityPurpose: 'Verificación de integridad UIN',
           sectorDerivation: 'Derivación sectorial',
-          checksum: 'Suma de verificación'
+          sectorDerivationPurpose: 'Tokens sectoriales no vinculables',
+          checksum: 'Suma de verificación',
+          checksumPurpose: 'Detección de errores de transcripción'
         },
         provenance: {
           title: 'Seguimiento de procedencia de la entropía',
@@ -1688,8 +2318,66 @@ export const translations = {
         },
         sectorSecurity: {
           title: 'Seguridad de tokens sectoriales'
+        },
+        bestPractices: {
+          title: 'Mejores prácticas de seguridad',
+          sectorSecrets: 'Secretos sectoriales',
+          sectorSecretsDesc: 'Use secretos únicos de alta entropía por sector (mín. 32 bytes)',
+          dbSecurity: 'Seguridad de base de datos',
+          dbSecurityDesc: 'Bloqueo a nivel de fila previene condiciones de carrera',
+          noPii: 'Sin datos personales en UIN',
+          noPiiDesc: 'El modo fundamental no contiene datos personales',
+          constantTime: 'Comparación de tiempo constante',
+          constantTimeDesc: 'La verificación de tokens usa comparación segura',
+          auditImmutable: 'Auditoría inmutable',
+          auditImmutableDesc: 'Los registros de auditoría son solo de adición',
+          tls: 'TLS en todas partes',
+          tlsDesc: 'Todas las comunicaciones API via HTTPS'
+        },
+        auth: {
+          title: 'Autenticación (Producción)'
         }
+      },
+      deployment: {
+        title: 'Implementación',
+        envVars: 'Variables de entorno',
+        pm2: 'Implementación PM2',
+        docker: 'Implementación Docker',
+        architecture: 'Arquitectura de implementación',
+        healthCheck: 'Comprobación de estado'
       }
+    },
+
+    // Security tab (SecurityStatus component)
+    security: {
+      title: 'Estado de servicios criptográficos',
+      refresh: 'Actualizar',
+      fetchError: 'Error al obtener estado',
+      enabled: 'Habilitado',
+      disabled: 'Deshabilitado',
+      mode: 'Modo',
+      provider: 'Proveedor',
+      initialized: 'Inicializado',
+      slot: 'Slot',
+      keyLabel: 'Etiqueta de clave',
+      hardwareCrypto: 'Criptografía hardware',
+      softwareFallback: 'Respaldo software',
+      authenticated: 'Autenticado',
+      address: 'Dirección',
+      connected: 'Conectado',
+      notAuthenticated: 'No autenticado',
+      sectorSecrets: 'Secretos sectoriales',
+      loaded: 'Cargado',
+      notLoaded: 'No cargado',
+      secretsCount: 'Cantidad de secretos',
+      source: 'Fuente',
+      environment: 'Entorno',
+      allConfigured: 'Todos los sectores configurados',
+      partialConfig: 'Configuración parcial',
+      noSecrets: 'Sin secretos cargados',
+      clickRefresh: 'Haga clic en "Actualizar" para cargar el estado de seguridad',
+      hsmProviders: 'Proveedores HSM compatibles (Orden de prioridad)',
+      hsmProvidersDesc: 'El TRNG hardware siempre tiene prioridad sobre CSPRNG software. Los HSM de producción proporcionan entropía certificada FIPS 140-2 Nivel 3.'
     },
 
     footer: {
