@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useId, useCallback } from 'react';
 import mermaid from 'mermaid';
 import './App.css';
+import { I18nProvider, useI18n, LanguageSwitcher } from './i18n/I18nContext.jsx';
 
 // Mermaid theme configurations
 const mermaidLightTheme = {
@@ -2049,8 +2050,11 @@ function ThemeToggle({ theme, onToggle }) {
   );
 }
 
-// Main App Component
-function App() {
+// Main App Content Component (uses i18n context)
+function AppContent() {
+  // i18n hook for translations
+  const { t } = useI18n();
+
   // Theme state - check localStorage and system preference
   const [theme, setTheme] = useState(() => {
     const savedTheme = localStorage.getItem('osia-theme');
@@ -2262,11 +2266,12 @@ function App() {
               }}
             />
             <div className="header-titles">
-              <h1>UIN Generator <span className="version">v2.0</span></h1>
-              <p className="subtitle">Open Standards for Identity APIs</p>
+              <h1>{t('header.title')} <span className="version">{t('header.version')}</span></h1>
+              <p className="subtitle">{t('header.subtitle')}</p>
             </div>
           </div>
           <div className="header-actions">
+            <LanguageSwitcher />
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
           </div>
         </div>
@@ -2276,19 +2281,19 @@ function App() {
 
         <div className="tabs">
           <TabButton active={activeTab === 'generate'} onClick={() => setActiveTab('generate')}>
-            Generate UIN
+            {t('nav.generate')}
           </TabButton>
           <TabButton active={activeTab === 'pool'} onClick={() => setActiveTab('pool')}>
-            Pool Management
+            {t('nav.pool')}
           </TabButton>
           <TabButton active={activeTab === 'lookup'} onClick={() => setActiveTab('lookup')}>
-            UIN Lookup
+            {t('nav.lookup')}
           </TabButton>
           <TabButton active={activeTab === 'security'} onClick={() => setActiveTab('security')}>
-            Security
+            {t('nav.security')}
           </TabButton>
           <TabButton active={activeTab === 'docs'} onClick={() => setActiveTab('docs')}>
-            Documentation
+            {t('nav.docs')}
           </TabButton>
         </div>
 
@@ -2299,26 +2304,26 @@ function App() {
             <div className="generator-panel">
               <div className="panel-card">
                 <div className="panel-header">
-                  <h2>Configuration</h2>
+                  <h2>{t('generate.title')}</h2>
                 </div>
 
                 {/* Mode Selection */}
                 <div className="config-section">
-                  <label className="config-label">Generation Mode</label>
+                  <label className="config-label">{t('generate.mode.label')}</label>
                   <div className="mode-grid">
                     {[
-                      { id: 'foundational', title: 'Foundational', desc: 'High-entropy ID' },
-                      { id: 'random', title: 'Random', desc: 'Configurable' },
-                      { id: 'structured', title: 'Structured', desc: 'Template-based' },
-                      { id: 'sector_token', title: 'Sector Token', desc: 'Derived' },
+                      { id: 'foundational', titleKey: 'generate.mode.foundational', descKey: 'generate.mode.foundationalDesc' },
+                      { id: 'random', titleKey: 'generate.mode.random', descKey: 'generate.mode.randomDesc' },
+                      { id: 'structured', titleKey: 'generate.mode.structured', descKey: 'generate.mode.structuredDesc' },
+                      { id: 'sector_token', titleKey: 'generate.mode.sectorToken', descKey: 'generate.mode.sectorTokenDesc' },
                     ].map(m => (
                       <button
                         key={m.id}
                         className={`mode-chip ${mode === m.id ? 'active' : ''}`}
                         onClick={() => setMode(m.id)}
                       >
-                        <span className="chip-title">{m.title}</span>
-                        <span className="chip-desc">{m.desc}</span>
+                        <span className="chip-title">{t(m.titleKey)}</span>
+                        <span className="chip-desc">{t(m.descKey)}</span>
                       </button>
                     ))}
                   </div>
@@ -2327,72 +2332,72 @@ function App() {
                 {/* Mode-specific Options */}
                 {(mode === 'foundational' || mode === 'random') && (
                   <div className="config-section">
-                    <label className="config-label">UIN Parameters</label>
+                    <label className="config-label">{t('generate.parameters.label')}</label>
                     <div className="param-grid">
                       <div className="param-item">
-                        <label>Length</label>
+                        <label>{t('generate.parameters.length')}</label>
                         <input type="number" value={length} onChange={(e) => setLength(e.target.value)} min="8" max="64" className="input-sm" />
                       </div>
                       <div className="param-item">
-                        <label>Charset</label>
+                        <label>{t('generate.parameters.charset')}</label>
                         <select value={charset} onChange={(e) => setCharset(e.target.value)} className="input-sm">
-                          <option value="A-Z0-9">A-Z, 0-9</option>
-                          <option value="0-9">0-9</option>
-                          <option value="safe">Safe</option>
-                          <option value="hex">Hex</option>
+                          <option value="A-Z0-9">{t('generate.parameters.charsetAlphaNum')}</option>
+                          <option value="0-9">{t('generate.parameters.charsetNumeric')}</option>
+                          <option value="safe">{t('generate.parameters.charsetAlpha')}</option>
+                          <option value="hex">{t('generate.parameters.charsetHex')}</option>
                         </select>
                       </div>
                       <div className="param-item">
-                        <label>Checksum</label>
+                        <label>{t('generate.checksum.label')}</label>
                         <select value={useChecksum ? checksumAlgorithm : 'none'} onChange={(e) => { if(e.target.value === 'none') { setUseChecksum(false); } else { setUseChecksum(true); setChecksumAlgorithm(e.target.value); }}} className="input-sm">
-                          <option value="none">None</option>
-                          <option value="iso7064">ISO 7064</option>
+                          <option value="none">{t('common.none')}</option>
+                          <option value="iso7064">{t('generate.checksum.iso7064')}</option>
                           <option value="modN">Mod N</option>
-                          <option value="iso7064mod97">Mod 97</option>
+                          <option value="iso7064mod97">{t('generate.checksum.mod97')}</option>
                         </select>
                       </div>
                     </div>
                     <label className="checkbox-inline">
                       <input type="checkbox" checked={excludeAmbiguous} onChange={(e) => setExcludeAmbiguous(e.target.checked)} />
-                      <span>Exclude ambiguous (0, O, I, 1, l)</span>
+                      <span>{t('generate.parameters.excludeAmbiguous')}</span>
                     </label>
                   </div>
                 )}
 
                 {mode === 'structured' && (
                   <div className="config-section">
-                    <label className="config-label">Template Configuration</label>
+                    <label className="config-label">{t('generate.structured.label')}</label>
                     <div className="param-item full">
-                      <label>Template</label>
+                      <label>{t('generate.structured.template')}</label>
                       <input type="text" value={template} onChange={(e) => setTemplate(e.target.value)} className="input-sm mono" placeholder="RR-YYYY-FFF-NNNNN" />
                     </div>
                     <div className="param-grid">
-                      <div className="param-item"><label>Region</label><input type="text" value={regionCode} onChange={(e) => setRegionCode(e.target.value)} className="input-sm" /></div>
-                      <div className="param-item"><label>Year</label><input type="text" value={year} onChange={(e) => setYear(e.target.value)} className="input-sm" /></div>
-                      <div className="param-item"><label>Facility</label><input type="text" value={facilityCode} onChange={(e) => setFacilityCode(e.target.value)} className="input-sm" /></div>
+                      <div className="param-item"><label>{t('generate.structured.region')}</label><input type="text" value={regionCode} onChange={(e) => setRegionCode(e.target.value)} className="input-sm" /></div>
+                      <div className="param-item"><label>{t('generate.structured.year')}</label><input type="text" value={year} onChange={(e) => setYear(e.target.value)} className="input-sm" /></div>
+                      <div className="param-item"><label>{t('generate.structured.facility')}</label><input type="text" value={facilityCode} onChange={(e) => setFacilityCode(e.target.value)} className="input-sm" /></div>
                     </div>
                   </div>
                 )}
 
                 {mode === 'sector_token' && (
                   <div className="config-section">
-                    <label className="config-label">Sector Token Configuration</label>
+                    <label className="config-label">{t('generate.sectorToken.label')}</label>
                     <div className="param-item full">
-                      <label>Foundational UIN</label>
-                      <input type="text" value={foundationalUin} onChange={(e) => setFoundationalUin(e.target.value.toUpperCase())} className="input-sm mono" placeholder="Enter UIN" />
+                      <label>{t('generate.sectorToken.foundationalUin')}</label>
+                      <input type="text" value={foundationalUin} onChange={(e) => setFoundationalUin(e.target.value.toUpperCase())} className="input-sm mono" placeholder={t('generate.sectorToken.enterUin')} />
                     </div>
                     <div className="param-grid">
                       <div className="param-item">
-                        <label>Sector</label>
+                        <label>{t('generate.sectorToken.sector')}</label>
                         <select value={sector} onChange={(e) => setSector(e.target.value)} className="input-sm">
-                          <option value="health">Health</option>
-                          <option value="tax">Tax</option>
-                          <option value="finance">Finance</option>
-                          <option value="education">Education</option>
-                          <option value="government">Government</option>
+                          <option value="health">{t('generate.sectorToken.sectors.health')}</option>
+                          <option value="tax">{t('generate.sectorToken.sectors.tax')}</option>
+                          <option value="finance">{t('generate.sectorToken.sectors.finance')}</option>
+                          <option value="education">{t('generate.sectorToken.sectors.education')}</option>
+                          <option value="government">{t('generate.sectorToken.sectors.government')}</option>
                         </select>
                       </div>
-                      <div className="param-item"><label>Length</label><input type="number" value={tokenLength} onChange={(e) => setTokenLength(e.target.value)} className="input-sm" min="8" max="64" /></div>
+                      <div className="param-item"><label>{t('generate.parameters.length')}</label><input type="number" value={tokenLength} onChange={(e) => setTokenLength(e.target.value)} className="input-sm" min="8" max="64" /></div>
                     </div>
                   </div>
                 )}
@@ -2400,10 +2405,10 @@ function App() {
                 {/* Separator Configuration */}
                 <div className="config-section">
                   <div className="config-header">
-                    <label className="config-label">Display Format</label>
+                    <label className="config-label">{t('generate.separator.label')}</label>
                     <label className="toggle-inline">
                       <input type="checkbox" checked={useSeparator} onChange={(e) => setUseSeparator(e.target.checked)} />
-                      <span>Use separators</span>
+                      <span>{t('generate.separator.enabled')}</span>
                     </label>
                   </div>
                   {useSeparator && (
@@ -2421,17 +2426,17 @@ function App() {
                       </div>
                       <div className="param-grid">
                         <div className="param-item">
-                          <label>Pattern</label>
+                          <label>{t('generate.separator.pattern')}</label>
                           <input type="text" value={separatorPattern} onChange={(e) => setSeparatorPattern(e.target.value)} className="input-sm mono" placeholder="4-4-4-4" />
                         </div>
                         <div className="param-item">
-                          <label>Separator</label>
+                          <label>{t('generate.separator.char')}</label>
                           <input type="text" value={separatorChar} onChange={(e) => setSeparatorChar(e.target.value)} className="input-sm mono" maxLength="2" />
                         </div>
                       </div>
                       {result?.value && (
                         <div className="format-preview">
-                          <span className="preview-label">Preview:</span>
+                          <span className="preview-label">{t('generate.separator.preview')}:</span>
                           <code className="preview-value">{formattedUin}</code>
                         </div>
                       )}
@@ -2441,43 +2446,43 @@ function App() {
 
                 {/* Lifecycle Configuration */}
                 <div className="config-section">
-                  <label className="config-label">Lifecycle & Claims</label>
+                  <label className="config-label">{t('generate.lifecycle.label')}</label>
                   <div className="claims-grid">
                     <div className="param-item">
-                      <label>Issuer (iss)</label>
+                      <label>{t('generate.lifecycle.issuer')}</label>
                       <input type="text" value={issuer} onChange={(e) => setIssuer(e.target.value)} className="input-sm" placeholder="issuer" />
                     </div>
                     <div className="param-item">
-                      <label>Audience (aud)</label>
-                      <input type="text" value={audience} onChange={(e) => setAudience(e.target.value)} className="input-sm" placeholder="optional" />
+                      <label>{t('generate.lifecycle.audience')}</label>
+                      <input type="text" value={audience} onChange={(e) => setAudience(e.target.value)} className="input-sm" placeholder={t('common.optional')} />
                     </div>
                     <div className="param-item">
-                      <label>Not Before (nbf)</label>
+                      <label>{t('generate.lifecycle.notBefore')}</label>
                       <div className="input-with-suffix">
                         <input type="number" value={notBeforeOffset} onChange={(e) => setNotBeforeOffset(parseInt(e.target.value) || 0)} className="input-sm" min="0" />
-                        <span className="suffix">min</span>
+                        <span className="suffix">{t('generate.lifecycle.minutes')}</span>
                       </div>
                     </div>
                   </div>
                   <div className="expiry-row">
                     <label className="expiry-toggle">
                       <input type="checkbox" checked={hasExpiry} onChange={(e) => setHasExpiry(e.target.checked)} />
-                      <span>Token Expires</span>
+                      <span>{t('generate.lifecycle.expires')}</span>
                     </label>
                     {hasExpiry ? (
                       <div className="expiry-input">
                         <input type="number" value={expiryDays} onChange={(e) => setExpiryDays(parseInt(e.target.value) || 1)} className="input-sm" min="1" />
-                        <span className="suffix">days</span>
+                        <span className="suffix">{t('generate.lifecycle.days')}</span>
                       </div>
                     ) : (
-                      <span className="no-expiry-badge">Infinite Lifetime</span>
+                      <span className="no-expiry-badge">{t('generate.lifecycle.noExpiry')}</span>
                     )}
                   </div>
                 </div>
 
                 {/* Generate Button */}
                 <button onClick={generateUin} disabled={loading} className="btn-generate-main">
-                  {loading ? 'Generating...' : 'Generate UIN'}
+                  {loading ? t('generate.generating') : t('generate.button')}
                 </button>
 
                 {error && (
@@ -2496,10 +2501,10 @@ function App() {
                   {/* UIN Display */}
                   <div className="output-card uin-card">
                     <div className="output-header">
-                      <h3>Generated UIN</h3>
+                      <h3>{t('generate.output.title')}</h3>
                       <div className="output-actions">
-                        <button onClick={copyRaw} className="btn-icon" title="Copy raw">RAW</button>
-                        {useSeparator && <button onClick={copyFormatted} className="btn-icon" title="Copy formatted">FMT</button>}
+                        <button onClick={copyRaw} className="btn-icon" title={t('common.copy')}>{t('generate.output.copyRaw')}</button>
+                        {useSeparator && <button onClick={copyFormatted} className="btn-icon" title={t('common.copy')}>{t('generate.output.copyFormatted')}</button>}
                       </div>
                     </div>
                     <div className="uin-display">
@@ -2509,7 +2514,7 @@ function App() {
                     <div className="uin-badges">
                       <span className="badge">{result.mode}</span>
                       {result.checksum?.used && <span className="badge">{result.checksum.algorithm}</span>}
-                      {!hasExpiry && <span className="badge badge-green">No Expiry</span>}
+                      {!hasExpiry && <span className="badge badge-green">{t('generate.lifecycle.noExpiry')}</span>}
                       {hasExpiry && <span className="badge badge-orange">{expiryDays}d TTL</span>}
                     </div>
                   </div>
@@ -2518,25 +2523,25 @@ function App() {
                   {result.provenance && (
                     <div className="output-card provenance-card">
                       <div className="output-header">
-                        <h3>Entropy Provenance</h3>
+                        <h3>{t('generate.output.provenance')}</h3>
                         <span className={`provenance-indicator ${result.provenance.hardware ? 'hardware' : 'software'}`}>
-                          {result.provenance.hardware ? 'Hardware TRNG' : 'Software CSPRNG'}
+                          {result.provenance.hardware ? t('generate.output.hardwareTrng') : t('generate.output.softwareCsprng')}
                         </span>
                       </div>
                       <div className="provenance-details">
                         <div className="provenance-item">
-                          <span className="prov-label">Source</span>
+                          <span className="prov-label">{t('generate.output.source')}</span>
                           <span className="prov-value">{result.provenance.source}</span>
                         </div>
                         {result.provenance.provider && (
                           <div className="provenance-item">
-                            <span className="prov-label">Provider</span>
+                            <span className="prov-label">{t('generate.output.provider')}</span>
                             <span className="prov-value">{result.provenance.provider}</span>
                           </div>
                         )}
                         {result.provenance.fipsLevel > 0 && (
                           <div className="provenance-item">
-                            <span className="prov-label">FIPS Level</span>
+                            <span className="prov-label">{t('generate.output.fipsLevel')}</span>
                             <span className="prov-value fips-badge">Level {result.provenance.fipsLevel}</span>
                           </div>
                         )}
@@ -2551,27 +2556,27 @@ function App() {
                         className={`format-tab ${outputFormat === 'json' ? 'active' : ''}`}
                         onClick={() => setOutputFormat('json')}
                       >
-                        JSON
+                        {t('generate.output.format.json')}
                       </button>
                       <button
                         className={`format-tab ${outputFormat === 'jwt' ? 'active' : ''}`}
                         onClick={() => setOutputFormat('jwt')}
                       >
-                        JWT
+                        {t('generate.output.format.jwt')}
                       </button>
                       <button
                         className={`format-tab ${outputFormat === 'jsonld' ? 'active' : ''}`}
                         onClick={() => setOutputFormat('jsonld')}
                       >
-                        JSON-LD
+                        {t('generate.output.format.jsonld')}
                       </button>
                     </div>
 
                     {outputFormat === 'json' && (
                       <div className="format-content">
                         <div className="output-header">
-                          <h3>JSON Payload</h3>
-                          <button onClick={copyPayload} className="btn-icon" title="Copy JSON">COPY</button>
+                          <h3>{t('generate.output.jsonPayload')}</h3>
+                          <button onClick={copyPayload} className="btn-icon" title={t('common.copy')}>{t('common.copy')}</button>
                         </div>
                         <pre className="json-output">{JSON.stringify(payload, null, 2)}</pre>
                       </div>
@@ -2580,12 +2585,12 @@ function App() {
                     {outputFormat === 'jwt' && (
                       <div className="format-content">
                         <div className="output-header">
-                          <h3>JWT (RFC 7519)</h3>
-                          <button onClick={copyJwt} className="btn-icon" title="Copy JWT">COPY</button>
+                          <h3>{t('generate.output.jwtTitle')}</h3>
+                          <button onClick={copyJwt} className="btn-icon" title={t('common.copy')}>{t('common.copy')}</button>
                         </div>
                         <div className="jwt-output">
                           <code className="jwt-token">{jwt}</code>
-                          <small className="jwt-note">Unsigned JWT (alg: none) - sign with your key for production</small>
+                          <small className="jwt-note">{t('generate.output.jwtNote')}</small>
                         </div>
                       </div>
                     )}
@@ -2593,11 +2598,11 @@ function App() {
                     {outputFormat === 'jsonld' && (
                       <div className="format-content">
                         <div className="output-header">
-                          <h3>JSON-LD (Linked Data)</h3>
-                          <button onClick={copyJsonLd} className="btn-icon" title="Copy JSON-LD">COPY</button>
+                          <h3>{t('generate.output.jsonldTitle')}</h3>
+                          <button onClick={copyJsonLd} className="btn-icon" title={t('common.copy')}>{t('common.copy')}</button>
                         </div>
                         <pre className="json-output jsonld-output">{JSON.stringify(jsonLd, null, 2)}</pre>
-                        <small className="jsonld-note">W3C JSON-LD format with OSIA vocabulary context</small>
+                        <small className="jsonld-note">{t('generate.output.jsonldNote')}</small>
                       </div>
                     )}
                   </div>
@@ -2605,8 +2610,8 @@ function App() {
               ) : (
                 <div className="output-empty">
                   <div className="empty-icon">ID</div>
-                  <h3>No UIN Generated</h3>
-                  <p>Configure options and click Generate to create a unique identifier</p>
+                  <h3>{t('generate.output.emptyTitle')}</h3>
+                  <p>{t('generate.output.emptyMessage')}</p>
                 </div>
               )}
             </div>
@@ -2623,20 +2628,29 @@ function App() {
       <footer className="footer">
         <div className="footer-content">
           <p>
-            <strong>OSIA UIN Generator v2.0</strong>
+            <strong>{t('footer.title')}</strong>
             <span className="footer-sep">|</span>
-            Open Standards for Identity APIs
+            {t('footer.subtitle')}
             <span className="footer-sep">|</span>
             <a href="https://secureidentityalliance.org/osia" target="_blank" rel="noopener noreferrer">
-              Learn More
+              {t('footer.learnMore')}
             </a>
           </p>
           <p className="footer-note">
-            API Server: {API_BASE_URL}
+            {t('footer.apiServer')}: {API_BASE_URL}
           </p>
         </div>
       </footer>
     </div>
+  );
+}
+
+// App wrapper with I18n Provider
+function App() {
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
   );
 }
 
