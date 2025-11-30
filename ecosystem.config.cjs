@@ -104,10 +104,10 @@ module.exports = {
 
         // Database configuration (PostgreSQL)
         // IMPORTANT: In production, set these via environment or secure secret management
-        OSIA_DB_HOST: process.env.PGHOST || process.env.OSIA_DB_HOST || 'db.pocket.one',
+        OSIA_DB_HOST: process.env.PGHOST || process.env.OSIA_DB_HOST ,
         OSIA_DB_PORT: process.env.PGPORT || process.env.OSIA_DB_PORT || 5432,
-        OSIA_DB_USER: process.env.PGUSER || process.env.OSIA_DB_USER || 'qm4sfgp38xasdyl3sy',
-        OSIA_DB_PASSWORD: process.env.PGPASSWORD || process.env.OSIA_DB_PASSWORD || 'PibeJSoNPDPX3pRDrs',
+        OSIA_DB_USER: process.env.PGUSER || process.env.OSIA_DB_USER ,
+        OSIA_DB_PASSWORD: process.env.PGPASSWORD || process.env.OSIA_DB_PASSWORD ,
         OSIA_DB_NAME: process.env.OSIA_DB_NAME || 'osia_dev',
 
         // Logging
