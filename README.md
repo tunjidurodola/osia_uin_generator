@@ -42,7 +42,8 @@ A production-grade, PostgreSQL-backed **Unique Identification Number (UIN)** gen
 - **Complete Audit Trail** - Immutable logging of all UIN lifecycle events
 - **Sector Tokenization** - Unlinkable, sector-specific derived identifiers
 - **Multi-Format Output** - JSON, JWT (RFC 7519), and JSON-LD (W3C Linked Data)
-- **React Web UI** - Professional interface for UIN management and documentation
+- **Format Configuration** - Customizable display formats with separator and grouping options
+- **React Web UI** - Professional interface with dark mode and multilingual support (EN, DE, FR, ES)
 - **Pool Lifecycle Testing** - UI for fetch, pre-assign, assign, revoke, retire operations
 - **Terraform IaC** - Multi-host deployment with GitHub Actions CI/CD
 
@@ -411,6 +412,16 @@ Generate a new UIN following the OSIA v1.2.0 endpoint pattern.
 | `GET` | `/uin/:uin` | Lookup UIN details |
 | `GET` | `/uin/:uin/audit` | Get complete audit trail |
 
+### Format Configuration Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/formats` | List all format configurations |
+| `GET` | `/formats/:code` | Get format by code |
+| `POST` | `/formats` | Create new format configuration |
+| `PUT` | `/formats/:code` | Update format configuration |
+| `DELETE` | `/formats/:code` | Delete format configuration |
+
 ### Example: Pool Lifecycle Testing
 
 ```bash
@@ -630,13 +641,41 @@ graph TB
 
 ## Web Interface
 
-The React-based web interface includes:
+The React-based web interface provides a professional, full-width design with:
 
-- **Generate UIN** - Mode selection, parameters, JWT generation
-- **Pool Management** - Statistics, pre-generation, monitoring
-- **UIN Lookup** - Search, details, audit trail
-- **Security** - HSM/Vault status, provider information
-- **Documentation** - API reference, architecture diagrams
+### Features
+
+- **Generate UIN** - Mode selection, parameters, JWT/JSON-LD output formats
+- **Pool Management** - Statistics, pre-generation with format selection, monitoring
+- **UIN Lookup** - Search, details, audit trail with formatted display
+- **Security** - HSM/Vault status, provider information, cryptographic services
+- **Documentation** - API reference, Mermaid architecture diagrams
+
+### Multilingual Support
+
+The UI supports four languages with a header dropdown selector:
+
+| Language | Code | Flag |
+|----------|------|------|
+| English | EN | US |
+| German | DE | DE |
+| French | FR | FR |
+| Spanish | ES | ES |
+
+### Dark Mode
+
+Full dark mode support with:
+- Theme toggle in header
+- Optimized Mermaid diagram rendering
+- Consistent color variables throughout
+
+### Format Configuration
+
+UIN display formats can be configured with:
+- Separator characters (dash, space, dot, custom)
+- Group sizes for digit grouping
+- Prefix/suffix text
+- Format association stored in database (not the formatted value)
 
 ```bash
 cd web
