@@ -1,6 +1,6 @@
 # OSIA UIN Generator v2.0
 
-A production-grade, PostgreSQL-backed **Unique Identification Number (UIN)** generator implementing the **[Open Standards for Identity APIs (OSIA) v1.2.0](https://osia.readthedocs.io/)** specification.
+A production-grade, PostgreSQL-backed **Unique Identification Number (UIN)** generator based on the **[Open Standards for Identity APIs (OSIA)](https://osia.readthedocs.io/)** specification.
 
 **Author:** Tunji Durodola <tunji.d@pocketone.eu>
 **Organization:** [Secure Identity Alliance](https://secureidentityalliance.org)
@@ -29,7 +29,7 @@ A production-grade, PostgreSQL-backed **Unique Identification Number (UIN)** gen
 
 ## Features
 
-- **OSIA v1.2.0 Compliant** - Full compliance with `POST /v1/uin` specification
+- **OSIA-Based Design** - Implements `POST /v1/uin` endpoint pattern
 - **Four Generation Modes** - Foundational, Random, Structured, and Sector Token
 - **PostgreSQL Pool Management** - Pre-generation, claiming, and assignment workflows
 - **Cryptographic Security** - CSPRNG, HMAC-SHA256, RIPEMD-160 hashing
@@ -175,7 +175,7 @@ curl -X POST http://localhost:19020/generate \
   -H "Content-Type: application/json" \
   -d '{"mode": "foundational"}'
 
-# OSIA-compliant generation
+# Generate via primary endpoint
 curl -X POST "http://localhost:19020/v1/uin?transactionId=test-001" \
   -H "Content-Type: application/json" \
   -d '{"firstName": "John", "lastName": "Doe"}'
@@ -185,11 +185,11 @@ curl -X POST "http://localhost:19020/v1/uin?transactionId=test-001" \
 
 ## API Reference
 
-### OSIA v1.2.0 Compliant Endpoint
+### Primary Endpoint
 
 #### `POST /v1/uin`
 
-Generate a new UIN per OSIA specification.
+Generate a new UIN following the OSIA endpoint pattern.
 
 **Query Parameters:**
 

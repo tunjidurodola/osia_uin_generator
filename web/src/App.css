@@ -1572,6 +1572,86 @@ body {
   margin: 0;
 }
 
+/* Mermaid Diagram Component - Sky Theme */
+.mermaid-diagram {
+  background: linear-gradient(135deg, #f0f8ff 0%, #e6f3ff 100%);
+  border: 1px solid #87CEEB;
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-5);
+  overflow-x: auto;
+  box-shadow: 0 2px 8px rgba(135, 206, 235, 0.15);
+}
+
+.diagram-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5BA4CF;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--sp-4);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid rgba(135, 206, 235, 0.3);
+}
+
+.diagram-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 150px;
+}
+
+.diagram-content svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.diagram-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 150px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.diagram-error {
+  background: var(--danger-light);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3);
+  color: var(--danger);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.diagram-error .error-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  background: var(--danger);
+  color: white;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  margin-right: var(--sp-2);
+}
+
+.diagram-source {
+  background: rgba(0, 0, 0, 0.05);
+  padding: var(--sp-2);
+  border-radius: var(--radius-sm);
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 10px;
+  overflow-x: auto;
+  max-height: 150px;
+  margin-top: var(--sp-2);
+}
+
 /* Endpoint Cards */
 .endpoint-card {
   background: var(--bg-card);

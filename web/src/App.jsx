@@ -1,5 +1,88 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
+import mermaid from 'mermaid';
 import './App.css';
+
+// Initialize mermaid with sky theme
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#87CEEB',
+    primaryTextColor: '#1a1a2e',
+    primaryBorderColor: '#5BA4CF',
+    secondaryColor: '#E0F4FF',
+    tertiaryColor: '#F0F8FF',
+    lineColor: '#5BA4CF',
+    textColor: '#1a1a2e',
+    mainBkg: '#E0F4FF',
+    nodeBorder: '#5BA4CF',
+    clusterBkg: '#F0F8FF',
+    clusterBorder: '#87CEEB',
+    titleColor: '#1a1a2e',
+    edgeLabelBackground: '#ffffff',
+    nodeTextColor: '#1a1a2e',
+  },
+  flowchart: {
+    curve: 'basis',
+    padding: 20,
+  },
+  sequence: {
+    actorMargin: 50,
+    boxMargin: 10,
+    boxTextMargin: 5,
+    noteMargin: 10,
+    messageMargin: 35,
+  },
+});
+
+// Mermaid Diagram Component
+function MermaidDiagram({ chart, title }) {
+  const containerRef = useRef(null);
+  const uniqueId = useId().replace(/:/g, '');
+  const [svg, setSvg] = useState('');
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const renderDiagram = async () => {
+      if (!chart || !containerRef.current) return;
+
+      try {
+        // Clear previous content
+        setSvg('');
+        setError(null);
+
+        const id = `mermaid-${uniqueId}-${Date.now()}`;
+        const { svg: renderedSvg } = await mermaid.render(id, chart.trim());
+        setSvg(renderedSvg);
+      } catch (err) {
+        console.error('Mermaid rendering error:', err);
+        setError(err.message || 'Failed to render diagram');
+      }
+    };
+
+    renderDiagram();
+  }, [chart, uniqueId]);
+
+  return (
+    <div className="mermaid-diagram" ref={containerRef}>
+      {title && <div className="diagram-title">{title}</div>}
+      {error ? (
+        <div className="diagram-error">
+          <span className="error-icon">!</span>
+          <span>Diagram rendering failed: {error}</span>
+          <pre className="diagram-source">{chart}</pre>
+        </div>
+      ) : svg ? (
+        <div
+          className="diagram-content"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : (
+        <div className="diagram-loading">Loading diagram...</div>
+      )}
+    </div>
+  );
+}
 
 const API_BASE_URL = '/api';
 const OSIA_LOGO_URL = 'https://mma.prnewswire.com/media/2394623/OSIA_Logo.jpg';
@@ -270,7 +353,6 @@ function Documentation() {
             ))}
           </ul>
           <div className="docs-meta">
-            <small>OSIA v1.2.0 Compliant</small>
             <small>Version 2.0.0</small>
           </div>
         </nav>
@@ -282,12 +364,12 @@ function Documentation() {
               <h1>OSIA UIN Generator</h1>
               <p className="lead">
                 A production-grade, PostgreSQL-backed Unique Identification Number (UIN) generator
-                implementing the <strong>Open Standards for Identity APIs (OSIA) v1.2.0</strong> specification.
+                based on the <strong>Open Standards for Identity APIs (OSIA)</strong> specification.
               </p>
 
               <h2>Key Features</h2>
               <ul className="feature-list">
-                <li><strong>OSIA v1.2.0 Compliant</strong> - Full compliance with POST /v1/uin specification</li>
+                <li><strong>OSIA-Based Design</strong> - Implements POST /v1/uin endpoint pattern</li>
                 <li><strong>Four Generation Modes</strong> - Foundational, Random, Structured, and Sector Token</li>
                 <li><strong>PostgreSQL Pool Management</strong> - Pre-generation, claiming, and assignment workflows</li>
                 <li><strong>Cryptographic Security</strong> - CSPRNG, HMAC-SHA256, RIPEMD-160 hashing</li>
@@ -338,8 +420,9 @@ pm2 start ecosystem.config.cjs`}</pre>
               <h1>System Architecture</h1>
 
               <h2>High-Level Overview</h2>
-              <div className="mermaid-container">
-                <pre className="mermaid-code">{`graph TB
+              <MermaidDiagram
+                title="System Architecture"
+                chart={`graph TB
     subgraph "Client Layer"
         WEB[Web UI<br/>React + Vite]
         EXT[External Systems<br/>Civil Registry / CRVS]
@@ -368,37 +451,28 @@ pm2 start ecosystem.config.cjs`}</pre>
     AUTH --> SECTOR
     GEN --> DB
     POOL --> DB
-    SECTOR --> GEN`}</pre>
-              </div>
+    SECTOR --> GEN`}
+              />
 
               <h2>Component Diagram</h2>
-              <div className="mermaid-container">
-                <pre className="mermaid-code">{`graph LR
-    subgraph "src/"
-        server[server.mjs<br/>HTTP API + Routes]
-        gen[uinGenerator.mjs<br/>Core Generation]
-        pool[poolService.mjs<br/>DB Operations]
-        sector[sectorToken.mjs<br/>Token Derivation]
-        check[checksum.mjs<br/>Validation]
-        hash[hash.mjs<br/>Integrity]
-        config[config.mjs<br/>Environment]
-        db[db.mjs<br/>Connection Pool]
-    end
-
-    server --> gen
-    server --> pool
-    gen --> check
-    gen --> hash
-    gen --> sector
-    pool --> db
+              <MermaidDiagram
+                title="Component Architecture"
+                chart={`flowchart LR
+    server[server.mjs] --> gen[uinGenerator.mjs]
+    server --> pool[poolService.mjs]
+    gen --> check[checksum.mjs]
+    gen --> hash[hash.mjs]
+    gen --> sector[sectorToken.mjs]
+    pool --> db[db.mjs]
     pool --> gen
     sector --> hash
-    db --> config`}</pre>
-              </div>
+    db --> config[config.mjs]`}
+              />
 
               <h2>Database Schema</h2>
-              <div className="mermaid-container">
-                <pre className="mermaid-code">{`erDiagram
+              <MermaidDiagram
+                title="Entity Relationship Diagram"
+                chart={`erDiagram
     uin_pool {
         varchar uin PK "Primary UIN"
         text mode "Generation mode"
@@ -429,8 +503,8 @@ pm2 start ecosystem.config.cjs`}</pre>
         timestamptz created_at "Event timestamp"
     }
 
-    uin_pool ||--o{ uin_audit : "has"`}</pre>
-              </div>
+    uin_pool ||--o{ uin_audit : "has"`}
+              />
 
               <h2>Generation Modes</h2>
               <table className="doc-table">
@@ -467,14 +541,13 @@ pm2 start ecosystem.config.cjs`}</pre>
             <article className="doc-article">
               <h1>API Reference</h1>
 
-              <h2>OSIA v1.2.0 Compliant Endpoint</h2>
+              <h2>Primary Endpoint</h2>
               <div className="endpoint-card primary">
                 <div className="endpoint-header">
                   <span className="method post">POST</span>
                   <code>/v1/uin</code>
-                  <span className="badge badge-green">OSIA Compliant</span>
                 </div>
-                <p>Generate a new UIN per OSIA specification.</p>
+                <p>Generate a new UIN following the OSIA endpoint pattern.</p>
 
                 <h4>Query Parameters</h4>
                 <table className="doc-table">
@@ -613,8 +686,9 @@ pm2 start ecosystem.config.cjs`}</pre>
               <h1>UIN Lifecycle</h1>
 
               <h2>State Machine</h2>
-              <div className="mermaid-container">
-                <pre className="mermaid-code">{`stateDiagram-v2
+              <MermaidDiagram
+                title="UIN State Transitions"
+                chart={`stateDiagram-v2
     [*] --> AVAILABLE: Pre-generate
 
     AVAILABLE --> PREASSIGNED: Claim
@@ -631,8 +705,8 @@ pm2 start ecosystem.config.cjs`}</pre>
     note right of PREASSIGNED: Reserved, not yet bound
     note right of ASSIGNED: Bound to person/entity
     note right of RETIRED: End of life (death, etc.)
-    note right of REVOKED: Fraud/abuse`}</pre>
-              </div>
+    note right of REVOKED: Fraud/abuse`}
+              />
 
               <h2>Lifecycle States</h2>
               <table className="doc-table">
@@ -669,53 +743,55 @@ pm2 start ecosystem.config.cjs`}</pre>
               </table>
 
               <h2>Workflow: Civil Registration</h2>
-              <div className="mermaid-container">
-                <pre className="mermaid-code">{`sequenceDiagram
+              <MermaidDiagram
+                title="Civil Registration Sequence"
+                chart={`sequenceDiagram
     participant CR as Civil Registry
     participant API as OSIA UIN API
     participant DB as PostgreSQL
 
     Note over CR,DB: Birth Registration Flow
 
-    CR->>API: POST /uin/claim<br/>{scope: "foundational"}
+    CR->>API: POST /uin/claim {scope: foundational}
     API->>DB: SELECT ... FOR UPDATE SKIP LOCKED
     DB-->>API: UIN row (status: AVAILABLE)
     API->>DB: UPDATE status = PREASSIGNED
     API->>DB: INSERT audit (PREASSIGNED)
-    API-->>CR: {uin: "ABC123", status: "PREASSIGNED"}
+    API-->>CR: {uin: ABC123, status: PREASSIGNED}
 
     Note over CR: Collect person data
 
-    CR->>API: POST /uin/assign<br/>{uin, assigned_to_ref}
+    CR->>API: POST /uin/assign {uin, assigned_to_ref}
     API->>DB: UPDATE status = ASSIGNED
     API->>DB: INSERT audit (ASSIGNED)
     API-->>CR: {success: true}
 
     Note over CR,DB: Death Registration Flow
 
-    CR->>API: POST /uin/status<br/>{uin, new_status: "RETIRED"}
+    CR->>API: POST /uin/status {uin, new_status: RETIRED}
     API->>DB: UPDATE status = RETIRED
     API->>DB: INSERT audit (RETIRED)
-    API-->>CR: {success: true}`}</pre>
-              </div>
+    API-->>CR: {success: true}`}
+              />
 
               <h2>Workflow: Sector Token Derivation</h2>
-              <div className="mermaid-container">
-                <pre className="mermaid-code">{`sequenceDiagram
+              <MermaidDiagram
+                title="Sector Token Derivation"
+                chart={`sequenceDiagram
     participant HS as Health System
     participant API as OSIA UIN API
     participant HMAC as HMAC-SHA256
 
     Note over HS,HMAC: Derive Health Sector Token
 
-    HS->>API: POST /generate<br/>{mode: "sector_token",<br/>foundationalUin, sector: "health"}
+    HS->>API: POST /generate {mode: sector_token}
     API->>HMAC: HMAC(secret_health, UIN + salt)
     HMAC-->>API: Derived token bytes
     API->>API: Encode to charset
-    API-->>HS: {token: "HLTH-XXX-YYY-ZZZ"}
+    API-->>HS: {token: HLTH-XXX-YYY-ZZZ}
 
-    Note over HS,HMAC: Token is unlinkable to foundational UIN`}</pre>
-              </div>
+    Note over HS,HMAC: Token is unlinkable to foundational UIN`}
+              />
             </article>
           )}
 
@@ -753,8 +829,9 @@ pm2 start ecosystem.config.cjs`}</pre>
               </table>
 
               <h2>Sector Token Security</h2>
-              <div className="mermaid-container">
-                <pre className="mermaid-code">{`flowchart LR
+              <MermaidDiagram
+                title="HMAC Token Derivation Flow"
+                chart={`flowchart LR
     subgraph "Input"
         UIN[Foundational UIN]
         SECTOR[Sector Name]
@@ -781,8 +858,8 @@ pm2 start ecosystem.config.cjs`}</pre>
     ENCODE --> TOKEN
 
     style SECRET fill:#ff6b6b,color:#fff
-    style TOKEN fill:#51cf66,color:#fff`}</pre>
-              </div>
+    style TOKEN fill:#51cf66,color:#fff`}
+              />
 
               <h2>Security Best Practices</h2>
               <ul className="feature-list">
@@ -881,8 +958,9 @@ npm run migrate
 npm start`}</pre>
 
               <h2>Deployment Architecture</h2>
-              <div className="mermaid-container">
-                <pre className="mermaid-code">{`graph TB
+              <MermaidDiagram
+                title="Production Deployment"
+                chart={`graph TB
     subgraph "Load Balancer"
         LB[nginx / HAProxy]
     end
@@ -919,8 +997,8 @@ npm start`}</pre>
 
     API1 --> LOGS
     API2 --> LOGS
-    API3 --> LOGS`}</pre>
-              </div>
+    API3 --> LOGS`}
+              />
 
               <h2>Health Check</h2>
               <pre className="code-block">{`# API Health endpoint
@@ -1647,7 +1725,7 @@ function App() {
             </a>
           </p>
           <p className="note">
-            <small>API Server: {API_BASE_URL} | OSIA v1.2.0 Compliant | RFC 7519 JWT Support</small>
+            <small>API Server: {API_BASE_URL} | RFC 7519 JWT Support</small>
           </p>
         </footer>
       </div>
