@@ -165,8 +165,30 @@ function PoolDashboard() {
   const [pregenFormat, setPregenFormat] = useState('');
   const [availableFormats, setAvailableFormats] = useState([]);
 
-  // Load available formats on mount
+  const fetchStats = async (scopeValue = scope) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/pool/stats?scope=${scopeValue}`);
+      const data = await response.json();
+      if (data.success) {
+        setStats(data.stats);
+      } else {
+        setError(data.error || 'Failed to fetch stats');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load stats and formats on mount
   useEffect(() => {
+    // Fetch stats on initial load
+    fetchStats('');
+
+    // Load available formats
     const loadFormats = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/formats`);
@@ -180,24 +202,6 @@ function PoolDashboard() {
     };
     loadFormats();
   }, []);
-
-  const fetchStats = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/pool/stats?scope=${scope}`);
-      const data = await response.json();
-      if (data.success) {
-        setStats(data.stats);
-      } else {
-        setError(data.error || 'Failed to fetch stats');
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const preGenerateUins = async () => {
     setLoading(true);
@@ -239,13 +243,14 @@ function PoolDashboard() {
   };
 
   return (
-    <div className="tab-content">
-      {/* Statistics Section */}
-      <div className="section-card">
-        <div className="section-header">
-          <h2>Pool Statistics</h2>
-          <p className="section-description">View UIN pool statistics by scope</p>
-        </div>
+    <div className="tab-content pool-tab">
+      {/* Statistics Section - Fixed */}
+      <div className="pool-stats-fixed">
+        <div className="section-card">
+          <div className="section-header">
+            <h2>Pool Statistics</h2>
+            <p className="section-description">View UIN pool statistics by scope</p>
+          </div>
 
         <div className="stats-controls">
           <div className="form-inline">
@@ -259,7 +264,7 @@ function PoolDashboard() {
               <option value="education">Education</option>
             </select>
           </div>
-          <button onClick={fetchStats} disabled={loading} className="btn-primary">
+          <button onClick={() => fetchStats(scope)} disabled={loading} className="btn-primary">
             {loading ? 'Loading...' : 'Refresh Statistics'}
           </button>
         </div>
@@ -316,10 +321,13 @@ function PoolDashboard() {
             <p>Click "Refresh Statistics" to load pool data</p>
           </div>
         )}
+        </div>
       </div>
 
-      {/* Pre-generation Section */}
-      <div className="section-card">
+      {/* Scrollable content area */}
+      <div className="pool-content-scroll">
+        {/* Pre-generation Section */}
+        <div className="section-card">
         <div className="section-header">
           <h2>Pre-generate UINs</h2>
           <p className="section-description">Batch generate UINs to populate the pool</p>
@@ -412,6 +420,7 @@ function PoolDashboard() {
           {error}
         </div>
       )}
+      </div>
     </div>
   );
 }

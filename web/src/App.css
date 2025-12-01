@@ -83,13 +83,16 @@ body {
   flex-direction: column;
 }
 
-/* Header - Full width */
+/* Header - Full width, sticky */
 .header {
   width: 100%;
   background: linear-gradient(135deg, var(--primary-dark), var(--primary), var(--primary-light));
   color: var(--white);
   padding: 1rem 2rem;
   box-shadow: var(--shadow-md);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .header-content {
@@ -157,7 +160,7 @@ body {
   flex-direction: column;
 }
 
-/* Tabs - Full width */
+/* Tabs - Full width, sticky below header */
 .tabs {
   width: 100%;
   display: flex;
@@ -165,6 +168,9 @@ body {
   border-bottom: 1px solid var(--border-color);
   padding: 0 2rem;
   overflow-x: auto;
+  position: sticky;
+  top: 80px; /* Below header */
+  z-index: 99;
 }
 
 .tab-button {
@@ -705,6 +711,34 @@ body {
   border-radius: var(--radius-lg);
   padding: 2rem;
   margin-bottom: 1.5rem;
+}
+
+/* Pool tab specific layout */
+.pool-tab {
+  padding: 0 !important;
+  position: relative;
+}
+
+.pool-stats-fixed {
+  position: fixed;
+  top: 132px; /* Below header + tabs */
+  left: 0;
+  right: 0;
+  padding: 1.5rem 2rem;
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  z-index: 50;
+}
+
+.pool-stats-fixed .section-card {
+  margin-bottom: 0;
+}
+
+.pool-content-scroll {
+  margin-top: 370px;
+  padding: 2rem;
+  background: var(--bg-page);
 }
 
 .section-header {
@@ -1506,21 +1540,41 @@ body {
 .docs-layout {
   width: 100%;
   flex: 1;
-  display: grid;
-  grid-template-columns: 280px 1fr;
+  display: flex;
+  min-height: calc(100vh - 132px);
 }
 
 @media (max-width: 900px) {
   .docs-layout {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
 }
 
 .docs-nav {
+  width: 280px;
+  flex-shrink: 0;
   background: var(--bg-card);
   border-right: 1px solid var(--border-color);
   padding: 1.5rem;
   overflow-y: auto;
+  position: fixed;
+  top: 132px; /* Below header (80px) + tabs (52px) */
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+}
+
+@media (max-width: 900px) {
+  .docs-nav {
+    position: relative;
+    width: 100%;
+    top: auto;
+    bottom: auto;
+    left: auto;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
 }
 
 .docs-nav h3 {
@@ -1576,10 +1630,18 @@ body {
 }
 
 .docs-content {
-  width: 100%;
+  flex: 1;
   background: var(--bg-page);
   padding: 2rem;
-  overflow-y: auto;
+  margin-left: 280px; /* Account for fixed sidebar */
+  min-height: calc(100vh - 132px);
+}
+
+@media (max-width: 900px) {
+  .docs-content {
+    margin-left: 0;
+    min-height: auto;
+  }
 }
 
 .doc-article {
