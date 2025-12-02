@@ -717,6 +717,45 @@ curl http://localhost:19020/health
 
 ---
 
+## Contributing
+
+We welcome contributions from the community! Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
+
+### Guidelines
+
+- Follow OSIA v1.2.0 specification standards
+- Adhere to security best practices (OWASP Top 10, secure coding)
+- Never commit actual UINs, PII, or sensitive data
+- Include tests for new features
+- Update documentation for API changes
+- Use meaningful commit messages
+
+### Security Vulnerabilities
+
+If you discover a security vulnerability, please report it privately to the project maintainers. Do not open a public issue.
+
+### Development
+
+```bash
+# Clone the repository
+git clone https://github.com/tunjidurodola/osia_uin_generator.git
+cd osia_uin_generator
+
+# Install dependencies
+npm install
+cd web && npm install
+
+# Run tests
+npm test
+
+# Start development servers
+npm run dev
+```
+
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for detailed compliance and contribution standards.
+
+---
+
 ## References
 
 - [OSIA Specification](https://osia.readthedocs.io/en/stable/)
