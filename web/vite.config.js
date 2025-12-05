@@ -25,6 +25,8 @@ export default defineConfig({
       'pocketone.eu',
       '.pocket.one',
       '.pocketone.eu',
+      'uin-generator.app',
+      '.uin-generator.app',
       'localhost',
       '192.168.0.2',
       '10.100.1.2',

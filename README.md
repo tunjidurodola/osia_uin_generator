@@ -5,6 +5,7 @@ A production-grade, PostgreSQL-backed **Unique Identification Number (UIN)** gen
 **Author:** Tunji Durodola <tunji.d@pocketone.eu>
 **Organization:** [Secure Identity Alliance](https://secureidentityalliance.org)
 **License:** MIT
+**Online Tool:** [https://uin-generator.app](https://uin-generator.app)
 
 ---
 
