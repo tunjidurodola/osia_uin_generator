@@ -9,6 +9,11 @@ export default defineConfig({
     host: '0.0.0.0',
     strictPort: true,
     proxy: {
+      '/api/assistant': {
+        target: 'http://localhost:19021',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/assistant/, '/api'),
+      },
       '/api': {
         target: 'http://localhost:19020',
         changeOrigin: true,
@@ -32,6 +37,11 @@ export default defineConfig({
       '10.100.1.2',
     ],
     proxy: {
+      '/api/assistant': {
+        target: 'http://localhost:19021',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/assistant/, '/api'),
+      },
       '/api': {
         target: 'http://localhost:19020',
         changeOrigin: true,

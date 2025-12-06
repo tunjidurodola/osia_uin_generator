@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef, useId, useCallback } from 'react';
+import { useState, useEffect, useRef, useId, useCallback, useMemo } from 'react';
 import mermaid from 'mermaid';
 import './App.css';
 import { I18nProvider, useI18n, LanguageSwitcher } from './i18n/I18nContext.jsx';
+import ChatWidget from './components/ChatWidget.jsx';
+import SupportPage from './components/SupportPage.jsx';
 
 // Mermaid theme configurations
 const mermaidLightTheme = {
@@ -2317,8 +2319,8 @@ function AppContent() {
 
   // Separator/formatting options
   const [useSeparator, setUseSeparator] = useState(false);
-  const [separatorChar, setSeparatorChar] = useState('-');
-  const [separatorPattern, setSeparatorPattern] = useState('4-4-4-4-3');
+  const [separatorChar, setSeparatorChar] = useState('');
+  const [separatorPattern, setSeparatorPattern] = useState('');
 
   // Lifecycle options
   const [hasExpiry, setHasExpiry] = useState(false);
@@ -2471,14 +2473,86 @@ function AppContent() {
   const copyJwt = () => copyToClipboard(jwt);
   const copyJsonLd = () => copyToClipboard(JSON.stringify(jsonLd, null, 2));
 
-  // Separator presets
-  const separatorPresets = [
-    { label: 'Dashes (4-4-4-4-3)', pattern: '4-4-4-4-3', char: '-' },
-    { label: 'Dots (5-5-5-5)', pattern: '5-5-5-5', char: '.' },
-    { label: 'Spaces (4-4-4-4-4)', pattern: '4-4-4-4-4', char: ' ' },
-    { label: 'Colons (2-4-4-4-5)', pattern: '2-4-4-4-5', char: ':' },
-    { label: 'Custom', pattern: '', char: '' },
-  ];
+  // Generate dynamic separator pattern based on UIN length and group size
+  const generatePattern = (uinLength, groupSize) => {
+    if (!uinLength || !groupSize || groupSize <= 0) return '';
+    const groups = [];
+    let remaining = uinLength;
+    while (remaining > 0) {
+      if (remaining <= groupSize) {
+        groups.push(remaining);
+        remaining = 0;
+      } else {
+        groups.push(groupSize);
+        remaining -= groupSize;
+      }
+    }
+    return groups.join('-');
+  };
+
+  // Get sample characters based on current charset
+  const getSampleChars = (currentCharset) => {
+    switch (currentCharset) {
+      case '0-9':
+        return '0123456789';
+      case 'hex':
+        return '0123456789ABCDEF';
+      case 'safe':
+        return 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // No I, O (confusing with 1, 0)
+      case 'A-Z0-9':
+      default:
+        return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    }
+  };
+
+  // Generate example formatted UIN for preview
+  const generateExampleUin = (uinLength, pattern, separator, currentCharset) => {
+    if (!pattern || !separator) return '';
+    const sampleChars = getSampleChars(currentCharset);
+    let sample = '';
+    for (let i = 0; i < uinLength; i++) {
+      sample += sampleChars[i % sampleChars.length];
+    }
+    const groups = pattern.split('-').map(n => parseInt(n, 10));
+    let result = '';
+    let pos = 0;
+    for (let i = 0; i < groups.length; i++) {
+      if (i > 0) result += separator;
+      result += sample.substring(pos, pos + groups[i]);
+      pos += groups[i];
+    }
+    return result;
+  };
+
+  // Dynamic separator presets based on current UIN length and charset
+  const separatorPresets = useMemo(() => [
+    {
+      label: `Dashes`,
+      pattern: generatePattern(length, 4),
+      char: '-',
+      example: generateExampleUin(length, generatePattern(length, 4), '-', charset)
+    },
+    {
+      label: `Dots`,
+      pattern: generatePattern(length, 5),
+      char: '.',
+      example: generateExampleUin(length, generatePattern(length, 5), '.', charset)
+    },
+    {
+      label: `Spaces`,
+      pattern: generatePattern(length, 4),
+      char: ' ',
+      example: generateExampleUin(length, generatePattern(length, 4), ' ', charset)
+    },
+    {
+      label: `Colons`,
+      pattern: generatePattern(length, 3),
+      char: ':',
+      example: generateExampleUin(length, generatePattern(length, 3), ':', charset)
+    },
+    { label: 'None', pattern: '', char: '' },
+    { label: 'Custom', pattern: separatorPattern, char: separatorChar, isCustom: true },
+  ], [length, charset, separatorPattern, separatorChar]);
 
   return (
     <div className="App">
@@ -2522,6 +2596,9 @@ function AppContent() {
           </TabButton>
           <TabButton active={activeTab === 'docs'} onClick={() => setActiveTab('docs')}>
             {t('nav.docs')}
+          </TabButton>
+          <TabButton active={activeTab === 'support'} onClick={() => setActiveTab('support')}>
+            {t('nav.support') || 'Support'}
           </TabButton>
         </div>
 
@@ -2641,31 +2718,28 @@ function AppContent() {
                   </div>
                   {useSeparator && (
                     <div className="separator-config">
-                      <div className="preset-chips">
-                        {separatorPresets.map((p, i) => (
-                          <button
-                            key={i}
-                            className={`preset-chip ${separatorPattern === p.pattern && separatorChar === p.char ? 'active' : ''}`}
-                            onClick={() => { setSeparatorPattern(p.pattern); setSeparatorChar(p.char); }}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="param-grid">
-                        <div className="param-item">
-                          <label>{t('generate.separator.pattern')}</label>
-                          <input type="text" value={separatorPattern} onChange={(e) => setSeparatorPattern(e.target.value)} className="input-sm mono" placeholder="4-4-4-4" />
+                      <div className="separator-row">
+                        <div className="preset-chips">
+                          {separatorPresets.filter(p => !p.isCustom && p.label !== 'None').map((p, i) => (
+                            <button
+                              key={i}
+                              className={`preset-chip ${separatorPattern === p.pattern && separatorChar === p.char ? 'active' : ''}`}
+                              onClick={() => { setSeparatorPattern(p.pattern); setSeparatorChar(p.char); }}
+                              title={p.example || 'No separator'}
+                            >
+                              <span className="preset-label">{p.label}</span>
+                            </button>
+                          ))}
                         </div>
-                        <div className="param-item">
+                        <div className="separator-custom">
                           <label>{t('generate.separator.char')}</label>
-                          <input type="text" value={separatorChar} onChange={(e) => setSeparatorChar(e.target.value)} className="input-sm mono" maxLength="2" />
+                          <input type="text" value={separatorChar} onChange={(e) => setSeparatorChar(e.target.value)} className="input-sm mono" maxLength="2" placeholder="-" />
                         </div>
                       </div>
-                      {result?.value && (
+                      {separatorChar && (
                         <div className="format-preview">
                           <span className="preview-label">{t('generate.separator.preview')}:</span>
-                          <code className="preview-value">{formattedUin}</code>
+                          <code className="preview-value">{result?.value ? formattedUin : generateExampleUin(length, separatorPattern || generatePattern(length, 4), separatorChar, charset)}</code>
                         </div>
                       )}
                     </div>
@@ -2851,7 +2925,15 @@ function AppContent() {
         {activeTab === 'lookup' && <UinLookup />}
         {activeTab === 'security' && <SecurityStatus />}
         {activeTab === 'docs' && <Documentation />}
+        {activeTab === 'support' && <SupportPage />}
       </div>
+
+      {/* AI Assistant Chat Widget - hidden on support page */}
+      {activeTab !== 'support' && (
+        <ChatWidget
+          currentTab={activeTab === 'generate' ? 0 : activeTab === 'pool' ? 1 : activeTab === 'lookup' ? 2 : activeTab === 'security' ? 3 : 4}
+        />
+      )}
 
       <footer className="footer">
         <div className="footer-content">

@@ -1,0 +1,612 @@
+/**
+ * Support Page - Comprehensive Help Desk for OSIA UIN Generator
+ * Includes AI Chat, Knowledge Base, FAQ, and Calendly Scheduling
+ */
+
+import { useState, useEffect, useRef } from 'react';
+import './SupportPage.css';
+
+const API_BASE = '/api/assistant';
+
+// FAQ Data
+const faqCategories = [
+  {
+    id: 'getting-started',
+    title: 'Getting Started',
+    icon: '🚀',
+    questions: [
+      {
+        q: 'What is the OSIA UIN Generator?',
+        a: 'The OSIA UIN Generator is a production-grade tool for generating Unique Identification Numbers (UINs) based on the Open Standards for Identity APIs (OSIA) v1.2.0 specification. It is designed for governments implementing national identity systems, civil registration, and population registries.'
+      },
+      {
+        q: 'How do I generate my first UIN?',
+        a: 'Navigate to the "Generate" tab, select "Foundational" mode (recommended for most use cases), and click "Generate UIN". The system will create a cryptographically secure, random identifier with a built-in checksum for validation.'
+      },
+      {
+        q: 'What generation mode should I use?',
+        a: 'For national ID systems, we strongly recommend "Foundational" mode. It provides maximum entropy (randomness), contains no embedded personal information (privacy by design), and uses hardware-based true random number generation when available.'
+      }
+    ]
+  },
+  {
+    id: 'technical',
+    title: 'Technical Questions',
+    icon: '⚙️',
+    questions: [
+      {
+        q: 'How many digits should my UIN have?',
+        a: 'The general rule is: 10^(digits) > 10 × population × 100 years. For India (1.4B population): minimum 12 digits. For a small nation (10M): minimum 9 digits. The default 19-character alphanumeric format provides virtually unlimited capacity.'
+      },
+      {
+        q: 'What is the difference between HSM TRNG and software PRNG?',
+        a: 'HSM (Hardware Security Module) TRNG uses physical phenomena like thermal noise for true randomness - mathematically unpredictable and FIPS certified. Software PRNG is algorithm-based and deterministic. For national identity systems, always use HSM TRNG in production.'
+      },
+      {
+        q: 'How does sector tokenization work?',
+        a: 'Sector tokenization derives different, unlinkable identifiers for each government sector (health, tax, education). Using HMAC-SHA256 with sector-specific secrets, it prevents cross-sector tracking while allowing each sector to identify the same person within their domain.'
+      },
+      {
+        q: 'What checksum algorithm is used?',
+        a: 'We use ISO 7064 Mod 37,36 checksum algorithm. It detects all single-character errors and transposition errors with 100% accuracy. The last character of every UIN is the checksum digit.'
+      }
+    ]
+  },
+  {
+    id: 'security',
+    title: 'Security & Compliance',
+    icon: '🔒',
+    questions: [
+      {
+        q: 'Is this system GDPR compliant?',
+        a: 'Yes. The system supports GDPR requirements through: consent token management (right to access/erasure), sector tokenization (data minimization), audit logging (accountability), and no embedded PII in UINs (privacy by design).'
+      },
+      {
+        q: 'What HSM providers are supported?',
+        a: 'We support: Thales Luna, SafeNet ProtectServer, Utimaco CryptoServer, nCipher/Entrust nShield, AWS CloudHSM, Azure Dedicated HSM, and YubiHSM 2. All production HSMs are FIPS 140-2 Level 3 certified.'
+      },
+      {
+        q: 'How are secrets protected?',
+        a: 'Sector secrets are stored in HashiCorp Vault with AppRole authentication. HSM keys are non-extractable (never leave the hardware). All audit logs are append-only and immutable.'
+      }
+    ]
+  },
+  {
+    id: 'implementation',
+    title: 'Implementation',
+    icon: '🏗️',
+    questions: [
+      {
+        q: 'How do I integrate with my civil registration system?',
+        a: 'Use the REST API endpoints: POST /v1/uin for OSIA-compliant generation, POST /uin/claim to reserve from pool, POST /uin/assign to bind to a person. The API returns JSON, JWT, or JSON-LD formats.'
+      },
+      {
+        q: 'What is the pre-generation pool?',
+        a: 'The pool is a pre-generated inventory of UINs ready for instant assignment. Benefits include: zero generation latency during registration, offline capability, quality assurance, and inventory forecasting. We recommend maintaining 3-6 months of inventory.'
+      },
+      {
+        q: 'Can I migrate from a legacy ID system?',
+        a: 'Yes. Options include: (A) Assign new UINs to all records, (B) Convert existing IDs to new format, (C) Hybrid approach with legacy reference. Contact us for a migration assessment and planning session.'
+      }
+    ]
+  }
+];
+
+// Knowledge Base Articles
+const knowledgeBase = [
+  {
+    id: 'osia-overview',
+    title: 'Understanding OSIA Standards',
+    category: 'Concepts',
+    readTime: '5 min',
+    excerpt: 'Learn about Open Standards for Identity APIs and how they enable interoperability between government identity systems.'
+  },
+  {
+    id: 'uin-lifecycle',
+    title: 'UIN Lifecycle Management',
+    category: 'Technical',
+    readTime: '8 min',
+    excerpt: 'Complete guide to UIN states: AVAILABLE → PREASSIGNED → ASSIGNED → RETIRED/REVOKED.'
+  },
+  {
+    id: 'hsm-integration',
+    title: 'HSM Integration Guide',
+    category: 'Security',
+    readTime: '12 min',
+    excerpt: 'Step-by-step guide for integrating Hardware Security Modules for cryptographic operations.'
+  },
+  {
+    id: 'sector-tokens',
+    title: 'Privacy-Preserving Sector Tokens',
+    category: 'Privacy',
+    readTime: '10 min',
+    excerpt: 'How to implement unlinkable sector-specific identifiers that prevent cross-department tracking.'
+  },
+  {
+    id: 'api-quickstart',
+    title: 'API Quick Start Guide',
+    category: 'Development',
+    readTime: '7 min',
+    excerpt: 'Get up and running with the OSIA UIN Generator API in under 15 minutes.'
+  },
+  {
+    id: 'vault-setup',
+    title: 'HashiCorp Vault Configuration',
+    category: 'Security',
+    readTime: '15 min',
+    excerpt: 'Configure centralized secret management for sector secrets and database credentials.'
+  }
+];
+
+export default function SupportPage() {
+  const [activeSection, setActiveSection] = useState('chat');
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+  const [expandedFaq, setExpandedFaq] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Welcome message
+  useEffect(() => {
+    if (messages.length === 0) {
+      setMessages([{
+        role: 'assistant',
+        content: `Hello! I'm Anna, your dedicated AI assistant for the OSIA UIN Generator.
+
+I can help you with:
+• Understanding UIN generation modes and best practices
+• Technical guidance on HSM integration and security
+• Implementation strategies for national ID systems
+• API integration and troubleshooting
+• Compliance and privacy requirements
+
+How can I assist you today?`,
+        timestamp: new Date()
+      }]);
+    }
+  }, [messages.length]);
+
+  // Scroll to bottom
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Send message
+  const sendMessage = async (messageText) => {
+    if (!messageText.trim()) return;
+
+    const userMessage = {
+      role: 'user',
+      content: messageText,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: messageText,
+          sessionId: sessionId,
+          context: 'support'
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to get response');
+
+      const data = await response.json();
+      if (data.sessionId) setSessionId(data.sessionId);
+
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.message,
+        timestamp: new Date()
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'I apologize, but I\'m having trouble connecting right now. Please try again or use the FAQ section below.',
+        timestamp: new Date(),
+        isError: true
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    sendMessage(inputValue);
+  };
+
+  const handleQuickQuestion = (question) => {
+    sendMessage(question);
+  };
+
+  // Filter FAQ based on search
+  const filteredFaq = faqCategories.map(cat => ({
+    ...cat,
+    questions: cat.questions.filter(q =>
+      q.q.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      q.a.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  })).filter(cat => cat.questions.length > 0);
+
+  // Format message content
+  const formatMessage = (content) => {
+    const lines = content.split('\n');
+    return lines.map((line, idx) => {
+      if (line.startsWith('•') || line.startsWith('-')) {
+        return <div key={idx} className="message-bullet">{line}</div>;
+      }
+      if (line.trim() === '') {
+        return <br key={idx} />;
+      }
+      return <p key={idx} className="message-line">{line}</p>;
+    });
+  };
+
+  return (
+    <div className="support-page">
+      {/* Hero Section */}
+      <div className="support-hero">
+        <div className="hero-content">
+          <img src="/anna-avatar.png" alt="Anna" className="hero-avatar" />
+          <div className="hero-text">
+            <h1>How can we help you?</h1>
+            <p>Get instant answers from Anna, our AI assistant, or explore our comprehensive resources below.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="support-nav">
+        <button
+          className={`support-nav-btn ${activeSection === 'chat' ? 'active' : ''}`}
+          onClick={() => setActiveSection('chat')}
+        >
+          <span className="nav-icon">💬</span>
+          Ask Anna
+        </button>
+        <button
+          className={`support-nav-btn ${activeSection === 'faq' ? 'active' : ''}`}
+          onClick={() => setActiveSection('faq')}
+        >
+          <span className="nav-icon">❓</span>
+          FAQ
+        </button>
+        <button
+          className={`support-nav-btn ${activeSection === 'knowledge' ? 'active' : ''}`}
+          onClick={() => setActiveSection('knowledge')}
+        >
+          <span className="nav-icon">📚</span>
+          Knowledge Base
+        </button>
+        <button
+          className={`support-nav-btn ${activeSection === 'schedule' ? 'active' : ''}`}
+          onClick={() => setActiveSection('schedule')}
+        >
+          <span className="nav-icon">📅</span>
+          Schedule Consultation
+        </button>
+        <button
+          className={`support-nav-btn ${activeSection === 'contact' ? 'active' : ''}`}
+          onClick={() => setActiveSection('contact')}
+        >
+          <span className="nav-icon">✉️</span>
+          Contact
+        </button>
+      </div>
+
+      {/* Content Sections */}
+      <div className="support-content">
+        {/* AI Chat Section */}
+        {activeSection === 'chat' && (
+          <div className="chat-section">
+            <div className="chat-container">
+              {/* Quick Questions */}
+              <div className="quick-questions">
+                <h3>Popular Questions</h3>
+                <div className="quick-question-grid">
+                  <button onClick={() => handleQuickQuestion('What UIN length should I use for my country?')}>
+                    UIN length recommendations
+                  </button>
+                  <button onClick={() => handleQuickQuestion('How do I set up HSM integration?')}>
+                    HSM setup guide
+                  </button>
+                  <button onClick={() => handleQuickQuestion('Explain sector tokenization')}>
+                    Sector tokenization
+                  </button>
+                  <button onClick={() => handleQuickQuestion('How do I migrate from a legacy ID system?')}>
+                    Legacy migration
+                  </button>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="chat-messages-container">
+                {messages.map((msg, idx) => (
+                  <div key={idx} className={`chat-msg ${msg.role} ${msg.isError ? 'error' : ''}`}>
+                    {msg.role === 'assistant' && (
+                      <img src="/anna-avatar.png" alt="Anna" className="msg-avatar" />
+                    )}
+                    <div className="msg-content">
+                      {formatMessage(msg.content)}
+                    </div>
+                  </div>
+                ))}
+                {isLoading && (
+                  <div className="chat-msg assistant">
+                    <img src="/anna-avatar.png" alt="Anna" className="msg-avatar" />
+                    <div className="msg-content">
+                      <div className="typing-dots">
+                        <span></span><span></span><span></span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input */}
+              <form className="chat-input-container" onSubmit={handleSubmit}>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Ask me anything about OSIA UIN Generator..."
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  disabled={isLoading}
+                />
+                <button type="submit" disabled={isLoading || !inputValue.trim()}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                  </svg>
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* FAQ Section */}
+        {activeSection === 'faq' && (
+          <div className="faq-section">
+            <div className="faq-search">
+              <input
+                type="text"
+                placeholder="Search frequently asked questions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+
+            <div className="faq-categories">
+              {filteredFaq.map(category => (
+                <div key={category.id} className="faq-category">
+                  <h3>
+                    <span className="category-icon">{category.icon}</span>
+                    {category.title}
+                  </h3>
+                  <div className="faq-list">
+                    {category.questions.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`faq-item ${expandedFaq === `${category.id}-${idx}` ? 'expanded' : ''}`}
+                      >
+                        <button
+                          className="faq-question"
+                          onClick={() => setExpandedFaq(
+                            expandedFaq === `${category.id}-${idx}` ? null : `${category.id}-${idx}`
+                          )}
+                        >
+                          <span>{item.q}</span>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M19 9l-7 7-7-7"/>
+                          </svg>
+                        </button>
+                        {expandedFaq === `${category.id}-${idx}` && (
+                          <div className="faq-answer">
+                            <p>{item.a}</p>
+                            <button
+                              className="ask-anna-btn"
+                              onClick={() => {
+                                setActiveSection('chat');
+                                handleQuickQuestion(`Tell me more about: ${item.q}`);
+                              }}
+                            >
+                              Ask Anna for more details →
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Knowledge Base Section */}
+        {activeSection === 'knowledge' && (
+          <div className="knowledge-section">
+            <h2>Knowledge Base</h2>
+            <p className="section-desc">In-depth articles and guides for implementing identity systems</p>
+
+            <div className="knowledge-grid">
+              {knowledgeBase.map(article => (
+                <div key={article.id} className="knowledge-card">
+                  <div className="knowledge-meta">
+                    <span className="knowledge-category">{article.category}</span>
+                    <span className="knowledge-time">{article.readTime}</span>
+                  </div>
+                  <h3>{article.title}</h3>
+                  <p>{article.excerpt}</p>
+                  <button
+                    className="read-more-btn"
+                    onClick={() => {
+                      setActiveSection('chat');
+                      handleQuickQuestion(`Explain in detail: ${article.title}`);
+                    }}
+                  >
+                    Ask Anna about this →
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Schedule Consultation Section */}
+        {activeSection === 'schedule' && (
+          <div className="schedule-section">
+            <div className="schedule-header">
+              <h2>Schedule a Consultation</h2>
+              <p>Book a one-on-one session with our identity systems experts to discuss your specific requirements.</p>
+            </div>
+
+            <div className="schedule-options">
+              <div className="schedule-card">
+                <div className="schedule-icon">🎯</div>
+                <h3>Technical Assessment</h3>
+                <p>30-minute session to evaluate your current infrastructure and recommend integration approaches.</p>
+                <ul>
+                  <li>Infrastructure review</li>
+                  <li>HSM compatibility check</li>
+                  <li>API integration planning</li>
+                </ul>
+                <a
+                  href="https://calendly.com/secureidentityalliance/technical-assessment"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="schedule-btn"
+                >
+                  Book Technical Assessment
+                </a>
+              </div>
+
+              <div className="schedule-card featured">
+                <div className="schedule-badge">Most Popular</div>
+                <div className="schedule-icon">🏛️</div>
+                <h3>Implementation Planning</h3>
+                <p>60-minute deep-dive into your national ID modernization project.</p>
+                <ul>
+                  <li>Requirements gathering</li>
+                  <li>Architecture design</li>
+                  <li>Migration strategy</li>
+                  <li>Security assessment</li>
+                </ul>
+                <a
+                  href="https://calendly.com/secureidentityalliance/implementation-planning"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="schedule-btn primary"
+                >
+                  Book Implementation Session
+                </a>
+              </div>
+
+              <div className="schedule-card">
+                <div className="schedule-icon">🔒</div>
+                <h3>Security Review</h3>
+                <p>45-minute session focused on cryptographic security and compliance requirements.</p>
+                <ul>
+                  <li>HSM configuration review</li>
+                  <li>Key management strategy</li>
+                  <li>Compliance mapping (GDPR, etc.)</li>
+                </ul>
+                <a
+                  href="https://calendly.com/secureidentityalliance/security-review"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="schedule-btn"
+                >
+                  Book Security Review
+                </a>
+              </div>
+            </div>
+
+            {/* Calendly Embed */}
+            <div className="calendly-embed">
+              <h3>Or choose a time below</h3>
+              <div
+                className="calendly-inline-widget"
+                data-url="https://calendly.com/secureidentityalliance?hide_gdpr_banner=1"
+                style={{ minWidth: '320px', height: '700px' }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Contact Section */}
+        {activeSection === 'contact' && (
+          <div className="contact-section">
+            <h2>Get in Touch</h2>
+            <p className="section-desc">We're here to help with your identity system implementation</p>
+
+            <div className="contact-grid">
+              <div className="contact-card">
+                <div className="contact-icon">📧</div>
+                <h3>Email Support</h3>
+                <p>For technical questions and implementation support</p>
+                <a href="mailto:support@secureidentityalliance.org">support@secureidentityalliance.org</a>
+              </div>
+
+              <div className="contact-card">
+                <div className="contact-icon">💼</div>
+                <h3>Enterprise Inquiries</h3>
+                <p>For government and large-scale deployments</p>
+                <a href="mailto:enterprise@secureidentityalliance.org">enterprise@secureidentityalliance.org</a>
+              </div>
+
+              <div className="contact-card">
+                <div className="contact-icon">🐙</div>
+                <h3>GitHub</h3>
+                <p>Report issues, contribute, or view source code</p>
+                <a href="https://github.com/tunjidurodola/osia_uin_generator" target="_blank" rel="noopener noreferrer">
+                  View on GitHub
+                </a>
+              </div>
+
+              <div className="contact-card">
+                <div className="contact-icon">📖</div>
+                <h3>OSIA Specification</h3>
+                <p>Official documentation and standards</p>
+                <a href="https://osia.readthedocs.io" target="_blank" rel="noopener noreferrer">
+                  Read the Docs
+                </a>
+              </div>
+            </div>
+
+            <div className="org-info">
+              <img src="/sia-logo.png" alt="Secure Identity Alliance" className="org-logo" onError={(e) => e.target.style.display = 'none'} />
+              <div className="org-details">
+                <h3>Secure Identity Alliance</h3>
+                <p>
+                  The Secure Identity Alliance is a global industry association that promotes the responsible,
+                  sustainable use of identity systems. OSIA is developed in collaboration with governments
+                  and industry experts worldwide.
+                </p>
+                <a href="https://secureidentityalliance.org" target="_blank" rel="noopener noreferrer">
+                  Learn more about SIA →
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

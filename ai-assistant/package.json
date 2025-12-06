@@ -1,0 +1,18 @@
+{
+  "name": "osia-uin-ai-assistant",
+  "version": "1.0.0",
+  "description": "AI-powered support assistant for OSIA UIN Generator",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "openai": "^4.20.0",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.0"
+  }
+}

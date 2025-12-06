@@ -197,6 +197,54 @@ module.exports = {
       kill_timeout: 5000,
       listen_timeout: 3000,
       shutdown_with_message: true
+    },
+
+    // Anna AI Assistant Service
+    {
+      name: 'osia-uin-ai-assistant',
+      script: './ai-assistant/server.mjs',
+      instances: 1,
+      exec_mode: 'fork',
+
+      // Interpreter (uses system Node.js)
+      interpreter: 'node',
+
+      // Environment variables
+      env: {
+        NODE_ENV: 'development',
+        AI_ASSISTANT_PORT: 19021,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY
+      },
+
+      env_production: {
+        NODE_ENV: 'production',
+        AI_ASSISTANT_PORT: 19021,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY
+      },
+
+      // Restart policy
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '500M',
+
+      // Restart on errors
+      min_uptime: '10s',
+      max_restarts: 10,
+
+      // Logging
+      error_file: './logs/ai-err.log',
+      out_file: './logs/ai-out.log',
+      log_file: './logs/ai-combined.log',
+      time: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+
+      // Merge logs
+      merge_logs: true,
+
+      // Process management
+      kill_timeout: 5000,
+      listen_timeout: 3000,
+      shutdown_with_message: true
     }
   ]
 };

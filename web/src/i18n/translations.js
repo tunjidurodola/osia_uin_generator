@@ -29,7 +29,8 @@ export const translations = {
       pool: 'Pool Management',
       lookup: 'UIN Lookup',
       security: 'Security',
-      docs: 'Documentation'
+      docs: 'Documentation',
+      support: 'Support'
     },
 
     // Generate tab
@@ -637,7 +638,8 @@ export const translations = {
       pool: 'Pool-Verwaltung',
       lookup: 'UIN-Suche',
       security: 'Sicherheit',
-      docs: 'Dokumentation'
+      docs: 'Dokumentation',
+      support: 'Unterstützung'
     },
 
     generate: {
@@ -1237,7 +1239,8 @@ export const translations = {
       pool: 'Gestion du pool',
       lookup: 'Recherche UIN',
       security: 'Sécurité',
-      docs: 'Documentation'
+      docs: 'Documentation',
+      support: 'Assistance'
     },
 
     generate: {
@@ -1837,7 +1840,8 @@ export const translations = {
       pool: 'Gestión del pool',
       lookup: 'Búsqueda UIN',
       security: 'Seguridad',
-      docs: 'Documentación'
+      docs: 'Documentación',
+      support: 'Soporte'
     },
 
     generate: {
