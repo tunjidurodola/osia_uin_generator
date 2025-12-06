@@ -617,34 +617,55 @@ How can I assist you today?`,
 
             <div className="contact-grid">
               <div className="contact-card">
-                <div className="contact-icon">📧</div>
-                <h3>Email Support</h3>
-                <p>For technical questions and implementation support</p>
-                <a href="mailto:support@secureidentityalliance.org">support@secureidentityalliance.org</a>
+                <div className="contact-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                  </svg>
+                </div>
+                <h3>General Inquiries</h3>
+                <p>For questions about OSIA and implementation support</p>
+                <a href="mailto:info@secureidentityalliance.org">info@secureidentityalliance.org</a>
               </div>
 
               <div className="contact-card">
-                <div className="contact-icon">💼</div>
-                <h3>Enterprise Inquiries</h3>
-                <p>For government and large-scale deployments</p>
-                <a href="mailto:enterprise@secureidentityalliance.org">enterprise@secureidentityalliance.org</a>
-              </div>
-
-              <div className="contact-card">
-                <div className="contact-icon">🐙</div>
-                <h3>GitHub</h3>
+                <div className="contact-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                </div>
+                <h3>GitHub Repository</h3>
                 <p>Report issues, contribute, or view source code</p>
                 <a href="https://github.com/tunjidurodola/osia_uin_generator" target="_blank" rel="noopener noreferrer">
-                  View on GitHub
+                  github.com/tunjidurodola/osia_uin_generator
                 </a>
               </div>
 
               <div className="contact-card">
-                <div className="contact-icon">📖</div>
-                <h3>OSIA Specification</h3>
-                <p>Official documentation and standards</p>
+                <div className="contact-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                  </svg>
+                </div>
+                <h3>OSIA Documentation</h3>
+                <p>Official specification and technical guides</p>
                 <a href="https://osia.readthedocs.io" target="_blank" rel="noopener noreferrer">
-                  Read the Docs
+                  osia.readthedocs.io
+                </a>
+              </div>
+
+              <div className="contact-card">
+                <div className="contact-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 16v-4M12 8h.01"/>
+                  </svg>
+                </div>
+                <h3>Secure Identity Alliance</h3>
+                <p>Learn more about SIA and OSIA standards</p>
+                <a href="https://secureidentityalliance.org" target="_blank" rel="noopener noreferrer">
+                  secureidentityalliance.org
                 </a>
               </div>
             </div>
