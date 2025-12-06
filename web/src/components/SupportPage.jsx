@@ -509,7 +509,14 @@ How can I assist you today?`,
 
             <div className="schedule-options">
               <div className="schedule-card">
-                <div className="schedule-icon">🎯</div>
+                <div className="schedule-icon">
+                  <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                    <rect x="8" y="8" width="32" height="32" rx="8" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round"/>
+                    <path d="M16 20h16M16 24h16M16 28h10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+                    <circle cx="34" cy="34" r="8" fill="var(--primary)" stroke="var(--bg-card)" strokeWidth="2"/>
+                    <path d="M34 30v4l2.5 2.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
                 <h3>Technical Assessment</h3>
                 <p>30-minute session to evaluate your current infrastructure and recommend integration approaches.</p>
                 <ul>
@@ -529,7 +536,14 @@ How can I assist you today?`,
 
               <div className="schedule-card featured">
                 <div className="schedule-badge">Most Popular</div>
-                <div className="schedule-icon">🏛️</div>
+                <div className="schedule-icon">
+                  <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                    <path d="M24 6L8 14v10c0 10 7 19 16 22 9-3 16-12 16-22V14L24 6z" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round"/>
+                    <path d="M18 24l4 4 8-8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <circle cx="34" cy="34" r="8" fill="var(--primary)" stroke="var(--bg-card)" strokeWidth="2"/>
+                    <path d="M31 34h6M34 31v6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </div>
                 <h3>Implementation Planning</h3>
                 <p>60-minute deep-dive into your national ID modernization project.</p>
                 <ul>
@@ -549,7 +563,16 @@ How can I assist you today?`,
               </div>
 
               <div className="schedule-card">
-                <div className="schedule-icon">🔒</div>
+                <div className="schedule-icon">
+                  <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                    <rect x="14" y="20" width="20" height="18" rx="3" stroke="currentColor" strokeWidth="2.5"/>
+                    <path d="M19 20v-5a5 5 0 0110 0v5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+                    <circle cx="24" cy="29" r="2.5" fill="currentColor"/>
+                    <path d="M24 31.5v3.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+                    <circle cx="36" cy="12" r="8" fill="var(--primary)" stroke="var(--bg-card)" strokeWidth="2"/>
+                    <path d="M33 12l2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
                 <h3>Security Review</h3>
                 <p>45-minute session focused on cryptographic security and compliance requirements.</p>
                 <ul>

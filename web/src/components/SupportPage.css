@@ -564,8 +564,19 @@
 }
 
 .schedule-icon {
-  font-size: 2rem;
-  margin-bottom: 1rem;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--primary-50) 0%, var(--primary-100) 100%);
+  border-radius: 16px;
+  color: var(--primary-600);
+}
+
+.schedule-icon svg {
+  display: block;
 }
 
 .schedule-card h3 {
