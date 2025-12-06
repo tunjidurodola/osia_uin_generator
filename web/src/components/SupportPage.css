@@ -11,7 +11,7 @@
 .support-hero {
   background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-800) 100%);
   padding: 3rem 2rem;
-  color: white;
+  color: var(--text-on-primary);
 }
 
 .hero-content {
