@@ -17,7 +17,7 @@ const faqCategories = [
     questions: [
       {
         q: 'What is the OSIA UIN Generator?',
-        a: 'The OSIA UIN Generator is a production-grade tool for generating Unique Identification Numbers (UINs) based on the Open Standards for Identity APIs (OSIA) v1.2.0 specification. It is designed for governments implementing national identity systems, civil registration, and population registries.'
+        a: 'The OSIA UIN Generator is a production-grade tool for generating Unique Identification Numbers (UINs) based on the Open Standards for Identity APIs (OSIA) v6.1.0 specification. It is designed for governments implementing national identity systems, civil registration, and population registries.'
       },
       {
         q: 'How do I generate my first UIN?',
@@ -146,9 +146,11 @@ export default function SupportPage() {
   const [sessionId, setSessionId] = useState(null);
   const [expandedFaq, setExpandedFaq] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [calendlyLoaded, setCalendlyLoaded] = useState(false);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const calendlyRef = useRef(null);
 
   // Welcome message
   useEffect(() => {
@@ -178,6 +180,34 @@ How can I assist you today?`,
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Load Calendly script
+  useEffect(() => {
+    if (activeSection === 'schedule' && !calendlyLoaded) {
+      const script = document.createElement('script');
+      script.src = 'https://assets.calendly.com/assets/external/widget.js';
+      script.async = true;
+      script.onload = () => {
+        setCalendlyLoaded(true);
+        // Initialize Calendly widget
+        if (window.Calendly && calendlyRef.current) {
+          window.Calendly.initInlineWidget({
+            url: 'https://calendly.com/secureidentityalliance',
+            parentElement: calendlyRef.current,
+            prefill: {},
+            utm: {}
+          });
+        }
+      };
+      document.body.appendChild(script);
+
+      // Load Calendly CSS
+      const link = document.createElement('link');
+      link.href = 'https://assets.calendly.com/assets/external/widget.css';
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+    }
+  }, [activeSection, calendlyLoaded]);
 
   // Send message
   const sendMessage = async (messageText) => {
@@ -542,10 +572,16 @@ How can I assist you today?`,
             <div className="calendly-embed">
               <h3>Or choose a time below</h3>
               <div
+                ref={calendlyRef}
                 className="calendly-inline-widget"
-                data-url="https://calendly.com/secureidentityalliance?hide_gdpr_banner=1"
                 style={{ minWidth: '320px', height: '700px' }}
-              />
+              >
+                {!calendlyLoaded && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
+                    Loading calendar...
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
