@@ -477,6 +477,17 @@ body {
   color: var(--text-primary);
 }
 
+.preset-chip.custom-preset {
+  border-style: dashed;
+  border-width: 2px;
+}
+
+.preset-chip.custom-preset:hover {
+  border-color: var(--primary);
+  background: var(--bg-card);
+  cursor: default;
+}
+
 .separator-custom-row {
   display: grid;
   grid-template-columns: 2fr 1fr;

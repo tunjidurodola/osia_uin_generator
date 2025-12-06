@@ -2721,12 +2721,17 @@ function AppContent() {
                       <div className="separator-presets">
                         <label className="preset-section-label">Quick Presets</label>
                         <div className="preset-chips">
-                          {separatorPresets.filter(p => !p.isCustom && p.label !== 'None').map((p, i) => (
+                          {separatorPresets.filter(p => p.label !== 'None').map((p, i) => (
                             <button
                               key={i}
-                              className={`preset-chip ${separatorPattern === p.pattern && separatorChar === p.char ? 'active' : ''}`}
-                              onClick={() => { setSeparatorPattern(p.pattern); setSeparatorChar(p.char); }}
-                              title={p.example || 'No separator'}
+                              className={`preset-chip ${p.isCustom ? 'custom-preset' : ''} ${separatorPattern === p.pattern && separatorChar === p.char ? 'active' : ''}`}
+                              onClick={() => {
+                                if (!p.isCustom) {
+                                  setSeparatorPattern(p.pattern);
+                                  setSeparatorChar(p.char);
+                                }
+                              }}
+                              title={p.isCustom ? 'Enter your own pattern' : (p.example || 'No separator')}
                             >
                               <span className="preset-label">{p.label}</span>
                             </button>
