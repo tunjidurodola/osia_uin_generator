@@ -432,13 +432,23 @@ body {
 /* Separator Config */
 .separator-config {
   margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
-.separator-row {
+.separator-presets {
   display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.preset-section-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .preset-chips {
@@ -467,21 +477,15 @@ body {
   color: var(--text-primary);
 }
 
-.separator-custom {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.separator-custom-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+  align-items: end;
 }
 
-.separator-custom label {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.separator-custom input {
-  width: 3rem;
-  text-align: center;
+.separator-custom-row .param-item {
+  margin-bottom: 0;
 }
 
 .preset-chip:hover {

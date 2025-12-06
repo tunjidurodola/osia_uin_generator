@@ -2718,7 +2718,8 @@ function AppContent() {
                   </div>
                   {useSeparator && (
                     <div className="separator-config">
-                      <div className="separator-row">
+                      <div className="separator-presets">
+                        <label className="preset-section-label">Quick Presets</label>
                         <div className="preset-chips">
                           {separatorPresets.filter(p => !p.isCustom && p.label !== 'None').map((p, i) => (
                             <button
@@ -2731,15 +2732,34 @@ function AppContent() {
                             </button>
                           ))}
                         </div>
-                        <div className="separator-custom">
+                      </div>
+                      <div className="separator-custom-row">
+                        <div className="param-item">
+                          <label>{t('generate.separator.pattern')} <span className="hint">e.g., 5-4-4 for {length} chars</span></label>
+                          <input
+                            type="text"
+                            value={separatorPattern}
+                            onChange={(e) => setSeparatorPattern(e.target.value)}
+                            className="input-sm mono"
+                            placeholder={generatePattern(length, 4)}
+                          />
+                        </div>
+                        <div className="param-item">
                           <label>{t('generate.separator.char')}</label>
-                          <input type="text" value={separatorChar} onChange={(e) => setSeparatorChar(e.target.value)} className="input-sm mono" maxLength="2" placeholder="-" />
+                          <input
+                            type="text"
+                            value={separatorChar}
+                            onChange={(e) => setSeparatorChar(e.target.value)}
+                            className="input-sm mono"
+                            maxLength="2"
+                            placeholder="-"
+                          />
                         </div>
                       </div>
-                      {separatorChar && (
+                      {separatorPattern && separatorChar && (
                         <div className="format-preview">
                           <span className="preview-label">{t('generate.separator.preview')}:</span>
-                          <code className="preview-value">{result?.value ? formattedUin : generateExampleUin(length, separatorPattern || generatePattern(length, 4), separatorChar, charset)}</code>
+                          <code className="preview-value">{result?.value ? formattedUin : generateExampleUin(length, separatorPattern, separatorChar, charset)}</code>
                         </div>
                       )}
                     </div>
