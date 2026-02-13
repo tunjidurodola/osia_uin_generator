@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useId, useCallback, useMemo } from 'react';
 import mermaid from 'mermaid';
+import DOMPurify from 'dompurify';
 import './App.css';
 import { I18nProvider, useI18n, LanguageSwitcher } from './i18n/I18nContext.jsx';
 import ChatWidget from './components/ChatWidget.jsx';
@@ -104,7 +105,10 @@ function MermaidDiagram({ chart, title }) {
 
         const id = `mermaid-${uniqueId}-${Date.now()}`;
         const { svg: renderedSvg } = await mermaid.render(id, chart.trim());
-        setSvg(renderedSvg);
+        const sanitizedSvg = DOMPurify.sanitize(renderedSvg, {
+          USE_PROFILES: { svg: true, svgFilters: true },
+        });
+        setSvg(sanitizedSvg);
       } catch (err) {
         console.error('Mermaid rendering error:', err);
         setError(err.message || 'Failed to render diagram');
