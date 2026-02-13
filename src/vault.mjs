@@ -58,6 +58,11 @@ export class VaultClient {
       timeout: this.config.timeout
     };
 
+    // Skip TLS verification if VAULT_SKIP_VERIFY is set (matches Vault CLI convention)
+    if (isHttps && (process.env.VAULT_SKIP_VERIFY === '1' || process.env.VAULT_SKIP_VERIFY === 'true')) {
+      options.rejectUnauthorized = false;
+    }
+
     // Add authentication token
     if (this.token) {
       options.headers['X-Vault-Token'] = this.token;

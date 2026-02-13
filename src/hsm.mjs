@@ -6,17 +6,24 @@
  * software CSPRNG when an HSM is available. HSMs like Thales, SafeNet, and
  * Utimaco provide certified hardware entropy sources.
  *
+ * Random byte generation priority:
+ *   1. Remote TRNG (Utimaco c3 via pkcs11-tool-remote SSH wrapper)
+ *   2. Local HSM TRNG (if available, e.g. YubiHSM2)
+ *   3. Software CSPRNG (Node.js crypto.randomBytes)
+ *
  * Supported HSM Providers:
  * - Thales Luna (Network HSM, Luna SA/PCIe)
  * - SafeNet (Luna, ProtectServer)
  * - Utimaco (SecurityServer, CryptoServer)
  * - nCipher/Entrust (nShield)
  * - AWS CloudHSM
+ * - Azure Dedicated HSM
  * - YubiHSM
  * - SoftHSM (Development/Testing only)
  */
 
 import crypto from 'crypto';
+import { execFileSync } from 'child_process';
 
 /**
  * HSM provider configurations with priority order
@@ -64,7 +71,8 @@ const HSM_PROVIDERS = {
       '/opt/utimaco/cryptoserver/lib/libcs_pkcs11_R3.so',
       '/usr/lib/utimaco/libcs_pkcs11_R3.so',
       '/opt/Utimaco/Software/PKCS11/lib/libcs_pkcs11_R3.so',
-      '/opt/CryptoServer/lib/libcs_pkcs11_R3.so'
+      '/opt/CryptoServer/lib/libcs_pkcs11_R3.so',
+      '/usr/local/lib/libcs_pkcs11_R3.so'
     ],
     description: 'Utimaco CryptoServer/SecurityServer with certified TRNG'
   },
@@ -182,6 +190,68 @@ export class HsmClient {
     this.providerInfo = null;
     this.detectedProvider = null;
     this.trngAvailable = false;
+    this.remoteTrngAvailable = false;
+    this.trngConfig = null;
+  }
+
+  /**
+   * Configure remote TRNG (Utimaco c3 via pkcs11-tool-remote SSH wrapper)
+   * Call this before initialize() to enable remote TRNG
+   * @param {object} config - Remote TRNG configuration
+   */
+  configureRemoteTrng(config = {}) {
+    this.trngConfig = {
+      enabled: config.enabled ?? (process.env.TRNG_ENABLED === 'true'),
+      slot: String(config.slot ?? (process.env.TRNG_SLOT || '5')),
+      pin: config.pin ?? (process.env.TRNG_PIN || ''),
+      command: config.command ?? 'pkcs11-tool-remote',
+      timeout: config.timeout ?? 10000,
+    };
+  }
+
+  /**
+   * Initialize remote TRNG connection
+   * Tests connectivity by generating a small random buffer
+   * @returns {Promise<boolean>} Whether remote TRNG is available
+   */
+  async initializeRemoteTrng() {
+    if (!this.trngConfig?.enabled || !this.trngConfig?.pin) {
+      console.log('[HSM] Remote TRNG not configured (missing enabled/pin)');
+      return false;
+    }
+
+    try {
+      const testBytes = this._remoteRandomBytesSync(16);
+      if (testBytes && testBytes.length === 16) {
+        this.remoteTrngAvailable = true;
+        console.log('[HSM] Remote TRNG verified via Utimaco CryptoServer c3 (pkcs11-tool-remote)');
+        console.log(`[HSM] TRNG slot: ${this.trngConfig.slot}, FIPS 140-2 Level 3`);
+        return true;
+      }
+      console.warn('[HSM] Remote TRNG test returned unexpected length');
+    } catch (error) {
+      console.warn('[HSM] Remote TRNG test failed:', error.message);
+    }
+
+    this.remoteTrngAvailable = false;
+    return false;
+  }
+
+  /**
+   * Generate random bytes from remote Utimaco TRNG via SSH
+   * @param {number} length - Number of bytes
+   * @returns {Buffer} Random bytes from hardware TRNG
+   */
+  _remoteRandomBytesSync(length) {
+    return execFileSync(this.trngConfig.command, [
+      '--generate-random', String(length),
+      '--slot', this.trngConfig.slot,
+      '--login', '--pin', this.trngConfig.pin
+    ], {
+      maxBuffer: 1024 * 1024,
+      timeout: this.trngConfig.timeout,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
   }
 
   /**
@@ -312,6 +382,11 @@ export class HsmClient {
         console.log('[HSM] PKCS#11 module not available, using software CSPRNG');
       }
 
+      // Initialize remote TRNG (Utimaco c3) if configured
+      if (this.trngConfig) {
+        await this.initializeRemoteTrng();
+      }
+
       this.initialized = true;
       return true;
     } catch (error) {
@@ -375,16 +450,16 @@ export class HsmClient {
     const slot = slots.items(slotIndex);
     console.log(`[HSM] Using slot ${slotIndex}: ${slot.slotDescription}`);
 
-    // Open session - YubiHSM requires specific flags
-    // Try with SERIAL_SESSION only first (for read operations)
+    // Open session - try RW first (needed for key creation), fallback to RO
     try {
-      this.session = slot.open(graphene.SessionFlag.SERIAL_SESSION);
-      console.log('[HSM] Opened read-only session');
-    } catch (sessionError) {
-      console.log('[HSM] Trying RW session...');
       this.session = slot.open(
         graphene.SessionFlag.RW_SESSION | graphene.SessionFlag.SERIAL_SESSION
       );
+      console.log('[HSM] Opened read-write session');
+    } catch (sessionError) {
+      console.log('[HSM] RW session failed, trying read-only...');
+      this.session = slot.open(graphene.SessionFlag.SERIAL_SESSION);
+      console.log('[HSM] Opened read-only session');
     }
 
     // Login if PIN provided
@@ -467,16 +542,36 @@ export class HsmClient {
 
   /**
    * Generate random bytes using HSM TRNG or software CSPRNG
-   * PRIORITY: Hardware TRNG is always preferred when available
+   *
+   * Priority order:
+   *   1. Remote hardware TRNG (Utimaco CryptoServer c3 via SSH)
+   *   2. Local HSM TRNG (if available)
+   *   3. Software CSPRNG (Node.js crypto.randomBytes)
+   *
    * @param {number} length - Number of bytes
    * @returns {Promise<Buffer>} Random bytes
    */
   async randomBytes(length) {
-    // Use hardware TRNG if available (priority)
+    // Priority 1: Remote hardware TRNG (Utimaco c3)
+    if (this.remoteTrngAvailable) {
+      try {
+        const bytes = this._remoteRandomBytesSync(length);
+        if (bytes && bytes.length === length) {
+          if (!this._loggedRemoteTrngUse) {
+            console.log('[HSM] Using remote hardware TRNG (Utimaco CryptoServer c3)');
+            this._loggedRemoteTrngUse = true;
+          }
+          return bytes;
+        }
+      } catch (error) {
+        console.warn('[HSM] Remote TRNG failed, trying local HSM:', error.message);
+      }
+    }
+
+    // Priority 2: Local HSM TRNG
     if (this.session && this.trngAvailable) {
       try {
         const randomData = this.session.generateRandom(length);
-        // Log first use of hardware TRNG
         if (!this._loggedTrngUse) {
           console.log(`[HSM] Using hardware TRNG from ${this.providerInfo?.name}`);
           this._loggedTrngUse = true;
@@ -487,17 +582,35 @@ export class HsmClient {
       }
     }
 
-    // Fallback to software CSPRNG (Node.js crypto.randomBytes)
+    // Priority 3: Software CSPRNG (Node.js crypto.randomBytes)
     return crypto.randomBytes(length);
   }
 
   /**
-   * Generate random bytes - synchronous check, async generation
-   * Returns source information along with random bytes
+   * Generate random bytes with source information
+   * Returns source metadata along with random bytes
    * @param {number} length - Number of bytes
-   * @returns {Promise<{bytes: Buffer, source: string, hardware: boolean}>}
+   * @returns {Promise<{bytes: Buffer, source: string, hardware: boolean, fipsLevel: number}>}
    */
   async randomBytesWithSource(length) {
+    // Priority 1: Remote TRNG (Utimaco c3)
+    if (this.remoteTrngAvailable) {
+      try {
+        const bytes = this._remoteRandomBytesSync(length);
+        if (bytes && bytes.length === length) {
+          return {
+            bytes,
+            source: 'Utimaco CryptoServer Hardware TRNG (c3)',
+            hardware: true,
+            fipsLevel: 3
+          };
+        }
+      } catch (error) {
+        console.warn('[HSM] Remote TRNG failed:', error.message);
+      }
+    }
+
+    // Priority 2: Local HSM TRNG
     if (this.session && this.trngAvailable) {
       try {
         const bytes = this.session.generateRandom(length);
@@ -611,14 +724,23 @@ export class HsmClient {
       providerName: this.providerInfo?.name || 'Unknown',
       providerType: this.providerInfo?.type || 'unknown',
       hasHardware: !!this.pkcs11,
-      hasTrng: this.trngAvailable,
-      fipsLevel: this.providerInfo?.fipsLevel || 0,
+      hasTrng: this.trngAvailable || this.remoteTrngAvailable,
+      remoteTrng: {
+        enabled: this.trngConfig?.enabled || false,
+        available: this.remoteTrngAvailable,
+        provider: 'Utimaco CryptoServer (c3)',
+        interface: 'pkcs11-tool-remote (SSH)',
+        fipsLevel: 3
+      },
+      fipsLevel: this.remoteTrngAvailable ? 3 : (this.providerInfo?.fipsLevel || 0),
       slot: this.config.slot,
       keyLabel: this.config.keyLabel,
       mode: this.pkcs11 ? 'hardware' : 'software',
-      randomSource: this.trngAvailable
-        ? `${this.providerInfo?.name} Hardware TRNG`
-        : 'Node.js CSPRNG'
+      randomSource: this.remoteTrngAvailable
+        ? 'Utimaco CryptoServer Hardware TRNG (c3)'
+        : this.trngAvailable
+          ? `${this.providerInfo?.name} Hardware TRNG`
+          : 'Node.js CSPRNG'
     };
   }
 
@@ -648,6 +770,7 @@ export class HsmClient {
     this.initialized = false;
     this.keyHandle = null;
     this.trngAvailable = false;
+    this.remoteTrngAvailable = false;
   }
 }
 

@@ -7,7 +7,10 @@
 import crypto from 'crypto';
 import { getHsmClient, isHsmEnabled } from './hsm.mjs';
 import { getVaultClient, isVaultEnabled } from './vault.mjs';
-import { setProvenance } from './uinGenerator.mjs';
+// setProvenance not exported from uinGenerator; use local no-op
+let _provenance = {};
+function setProvenance(p) { _provenance = p; }
+export function getProvenance() { return _provenance; }
 
 /**
  * Crypto service state
@@ -60,10 +63,29 @@ export async function initializeCryptoService(config = {}) {
     }
   }
 
+  // Load HSM config from Vault if available (includes TRNG PIN)
+  let hsmVaultConfig = {};
+  if (vaultClient && status.vault.authenticated) {
+    try {
+      hsmVaultConfig = await vaultClient.getHsmConfig();
+      console.log('[CryptoService] Loaded HSM config from Vault (osia/hsm)');
+    } catch (error) {
+      console.warn('[CryptoService] Could not load HSM config from Vault:', error.message);
+    }
+  }
+
   // Initialize HSM if enabled
   if (isHsmEnabled()) {
     try {
       hsmClient = getHsmClient(config.hsm || {});
+
+      // Configure remote TRNG with Vault-provided PIN (fallback to env var)
+      hsmClient.configureRemoteTrng({
+        enabled: hsmVaultConfig.trng_provider === 'utimaco' || process.env.TRNG_ENABLED === 'true',
+        slot: hsmVaultConfig.trng_slot || process.env.TRNG_SLOT || '5',
+        pin: hsmVaultConfig.trng_pin || process.env.TRNG_PIN || '',
+      });
+
       await hsmClient.initialize();
 
       status.hsm.enabled = true;
@@ -71,6 +93,10 @@ export async function initializeCryptoService(config = {}) {
       status.hsm.mode = hsmClient.pkcs11 ? 'hardware' : 'software';
 
       console.log(`[CryptoService] HSM initialized in ${status.hsm.mode} mode`);
+
+      if (hsmClient.remoteTrngAvailable) {
+        console.log('[CryptoService] Remote TRNG (Utimaco c3) available - FIPS 140-2 Level 3');
+      }
     } catch (error) {
       console.error('[CryptoService] HSM initialization failed:', error.message);
     }
@@ -163,25 +189,27 @@ export async function hmac(algorithm, key, data) {
  * Generate random bytes
  * PRIORITY: Uses HSM hardware TRNG when available, falls back to software CSPRNG
  *
- * Hardware TRNG provides higher quality entropy from certified sources:
- * - Thales Luna: FIPS 140-2 Level 3 certified TRNG
- * - SafeNet: Hardware entropy generator
- * - Utimaco: Certified physical random source
+ * Priority order:
+ *   1. Remote TRNG (Utimaco CryptoServer c3 via SSH) - FIPS 140-2 Level 3
+ *   2. Local HSM TRNG (if available)
+ *   3. Software CSPRNG (Node.js crypto.randomBytes)
  *
  * @param {number} length - Number of bytes
  * @returns {Promise<Buffer>} Random bytes
  */
 export async function randomBytes(length) {
   // Priority: Use HSM hardware TRNG when available
-  if (hsmClient && hsmClient.initialized && hsmClient.trngAvailable) {
+  if (hsmClient && hsmClient.initialized && (hsmClient.remoteTrngAvailable || hsmClient.trngAvailable)) {
     try {
       const bytes = await hsmClient.randomBytes(length);
       // Set provenance for UIN generator
       setProvenance({
-        source: hsmClient.config?.providerName || 'HSM Hardware TRNG',
+        source: hsmClient.remoteTrngAvailable
+          ? 'Utimaco CryptoServer Hardware TRNG (c3)'
+          : (hsmClient.providerInfo?.name || 'HSM Hardware TRNG'),
         hardware: true,
-        fipsLevel: hsmClient.config?.fipsLevel || 2,
-        provider: hsmClient.config?.provider || 'hsm'
+        fipsLevel: hsmClient.remoteTrngAvailable ? 3 : (hsmClient.providerInfo?.fipsLevel || 2),
+        provider: hsmClient.remoteTrngAvailable ? 'utimaco-remote' : (hsmClient.config?.provider || 'hsm')
       });
       return bytes;
     } catch (error) {
@@ -205,7 +233,7 @@ export async function randomBytes(length) {
  * @returns {Promise<{bytes: Buffer, source: string, hardware: boolean, fipsLevel: number}>}
  */
 export async function randomBytesWithSource(length) {
-  if (hsmClient && hsmClient.initialized && hsmClient.trngAvailable) {
+  if (hsmClient && hsmClient.initialized && (hsmClient.remoteTrngAvailable || hsmClient.trngAvailable)) {
     try {
       return await hsmClient.randomBytesWithSource(length);
     } catch (error) {

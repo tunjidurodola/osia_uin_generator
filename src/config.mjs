@@ -1,11 +1,7 @@
 /**
  * Configuration Module for UIN Generator
  * Loads configuration from environment variables with sensible defaults
- * Supports HashiCorp Vault and HSM integration
  */
-
-import { isVaultEnabled, getVaultClient } from './vault.mjs';
-import { isHsmEnabled } from './hsm.mjs';
 
 /**
  * Default character sets
@@ -104,40 +100,12 @@ const DEFAULT_CONFIG = {
   serverPort: 19020,
   serverHost: '0.0.0.0',
 
-  // Database configuration
-  db: {
-    host: process.env.PGHOST,
-    port: 5432,
-    user: process.env.PGUSER,
-    password: process.env.PGPASSWORD,
-    name: 'osia_dev'
-  },
-
   // Security
   enableCors: true,
   corsOrigin: '*',  // For dev only; restrict in production
 
   // Logging
-  logLevel: 'info',
-
-  // Vault configuration
-  vault: {
-    enabled: false,
-    address: 'http://127.0.0.1:8200',
-    roleId: '',
-    secretId: '',
-    namespace: ''
-  },
-
-  // HSM configuration
-  hsm: {
-    enabled: false,
-    provider: 'softhsm',
-    library: '/usr/lib/softhsm/libsofthsm2.so',
-    slot: 0,
-    pin: '',
-    keyLabel: 'osia-sector-key'
-  }
+  logLevel: 'info'
 };
 
 /**
@@ -191,15 +159,6 @@ export function loadConfig() {
     serverPort: parseInt(process.env.PORT || process.env.UIN_PORT || DEFAULT_CONFIG.serverPort),
     serverHost: process.env.HOST || process.env.UIN_HOST || DEFAULT_CONFIG.serverHost,
 
-    // Database
-    db: {
-      host: process.env.OSIA_DB_HOST || DEFAULT_CONFIG.db.host,
-      port: parseInt(process.env.OSIA_DB_PORT || DEFAULT_CONFIG.db.port),
-      user: process.env.OSIA_DB_USER || DEFAULT_CONFIG.db.user,
-      password: process.env.OSIA_DB_PASSWORD || DEFAULT_CONFIG.db.password,
-      name: process.env.OSIA_DB_NAME || DEFAULT_CONFIG.db.name
-    },
-
     // Security
     enableCors: process.env.UIN_ENABLE_CORS !== 'false',
     corsOrigin: process.env.UIN_CORS_ORIGIN || DEFAULT_CONFIG.corsOrigin,
@@ -207,24 +166,13 @@ export function loadConfig() {
     // Logging
     logLevel: process.env.LOG_LEVEL || process.env.UIN_LOG_LEVEL || DEFAULT_CONFIG.logLevel,
 
-    // Vault configuration
-    vault: {
-      enabled: isVaultEnabled(),
-      address: process.env.VAULT_ADDR || DEFAULT_CONFIG.vault.address,
-      token: process.env.VAULT_TOKEN || '',
-      roleId: process.env.VAULT_ROLE_ID || DEFAULT_CONFIG.vault.roleId,
-      secretId: process.env.VAULT_SECRET_ID || DEFAULT_CONFIG.vault.secretId,
-      namespace: process.env.VAULT_NAMESPACE || DEFAULT_CONFIG.vault.namespace
-    },
-
-    // HSM configuration
-    hsm: {
-      enabled: isHsmEnabled(),
-      provider: process.env.HSM_PROVIDER || DEFAULT_CONFIG.hsm.provider,
-      library: process.env.HSM_LIBRARY || DEFAULT_CONFIG.hsm.library,
-      slot: parseInt(process.env.HSM_SLOT || DEFAULT_CONFIG.hsm.slot),
-      pin: process.env.HSM_PIN || DEFAULT_CONFIG.hsm.pin,
-      keyLabel: process.env.HSM_KEY_LABEL || DEFAULT_CONFIG.hsm.keyLabel
+    // Database
+    db: {
+      host: process.env.DB_HOST || '172.27.104.111',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || '',
+      name: process.env.DB_NAME || 'osia_dev',
     }
   };
 

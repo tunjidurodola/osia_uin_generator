@@ -6,6 +6,7 @@
 import { getDb } from './db.mjs';
 import { generateUin } from './uinGenerator.mjs';
 import { getFormat, getFormatByScope, getFormatByMode, getDefaultFormat, applyFormat } from './formatService.mjs';
+import crypto from 'crypto';
 
 /**
  * Insert audit log entry
@@ -99,7 +100,7 @@ export async function preGenerateUins({ count, mode, scope, options = {}, format
           iat: db.fn.now(),
           status: 'AVAILABLE',
           ts: db.fn.now(),
-          hash_rmd160: result.hash_rmd160,
+          hash_rmd160: crypto.createHash("ripemd160").update(result.value).digest("hex"),
           meta: {
             checksum: result.checksum || null,
             rawComponents: result.rawComponents || null,

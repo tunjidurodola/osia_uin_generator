@@ -2,32 +2,60 @@
  * PM2 Ecosystem Configuration for OSIA UIN Generator
  *
  * Usage:
- *   # Start all services (API + Web UI)
- *   pm2 start ecosystem.config.cjs
- *
- *   # Start only API server
- *   pm2 start ecosystem.config.cjs --only osia-uin-api-dev
- *
- *   # Start only Web UI
- *   pm2 start ecosystem.config.cjs --only osia-uin-web-dev
- *
- *   # Stop all
- *   pm2 stop ecosystem.config.cjs
- *
- *   # View logs
- *   pm2 logs
- *   pm2 logs osia-uin-api-dev
- *   pm2 logs osia-uin-web-dev
- *
- *   # Delete all
- *   pm2 delete ecosystem.config.cjs
+ *   pm2 start ecosystem.config.cjs --only osia-uin-generator-dev
+ *   pm2 stop osia-uin-generator-dev
+ *   pm2 restart osia-uin-generator-dev
+ *   pm2 logs osia-uin-generator-dev
+ *   pm2 delete osia-uin-generator-dev
  */
+
+// Read Vault token from file (same pattern as myid-hsm, unified-middleware)
+const VAULT_TOKEN = (() => {
+  try { return require('fs').readFileSync('/run/vault/token', 'utf8').trim(); }
+  catch { return ''; }
+})();
 
 module.exports = {
   apps: [
-    // Backend API Service
     {
-      name: 'osia-uin-api-dev',
+      name: 'osia-uin-generator-web',
+      script: 'npm',
+      args: 'run preview',
+      cwd: './web',
+      instances: 1,
+      exec_mode: 'fork',
+
+      // Environment variables
+      env: {
+        NODE_ENV: 'production'
+      },
+
+      // Restart policy
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '200M',
+
+      // Restart on errors
+      min_uptime: '10s',
+      max_restarts: 10,
+
+      // Logging
+      error_file: './web/logs/err.log',
+      out_file: './web/logs/out.log',
+      log_file: './web/logs/combined.log',
+      time: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+
+      // Merge logs from different instances
+      merge_logs: true,
+
+      // Process management
+      kill_timeout: 5000,
+      listen_timeout: 3000,
+      shutdown_with_message: true
+    },
+    {
+      name: 'osia-uin-generator-dev',
       script: './src/server.mjs',
       instances: 1,
       exec_mode: 'fork',
@@ -43,6 +71,9 @@ module.exports = {
         PORT: 19020,
         HOST: '0.0.0.0',
 
+        // TLS - required for Vault self-signed cert (must be set at fork spawn)
+        NODE_EXTRA_CA_CERTS: '/etc/ssl/certs/vault-ca.crt',
+
         // UIN configuration
         UIN_DEFAULT_CHARSET: 'A-Z0-9',
         UIN_DEFAULT_LENGTH: 19,
@@ -53,6 +84,7 @@ module.exports = {
         UIN_SUPPORTED_SECTORS: 'health,tax,finance,telco,stats,education,social,government',
 
         // Sector secrets (DEV ONLY - DO NOT USE IN PRODUCTION)
+        // In production these come from Vault (osia/sector-secrets)
         SECTOR_SECRET_HEALTH: 'dev-secret-health-DO-NOT-USE-IN-PRODUCTION',
         SECTOR_SECRET_TAX: 'dev-secret-tax-DO-NOT-USE-IN-PRODUCTION',
         SECTOR_SECRET_FINANCE: 'dev-secret-finance-DO-NOT-USE-IN-PRODUCTION',
@@ -66,32 +98,36 @@ module.exports = {
         UIN_ENABLE_CORS: 'true',
         UIN_CORS_ORIGIN: '*',
 
-        // HSM Configuration - Using remote YubiHSM on nv2 (192.168.0.16)
-        // Local YubiHSM on nv1 is under maintenance
-        HSM_ENABLED: 'true',
-        HSM_PROVIDER: 'yubihsm',
-        HSM_LIBRARY: '/usr/local/lib/pkcs11/yubihsm_pkcs11.so',
-        HSM_SLOT: '0',
-        HSM_PIN: '0001password',  // YubiHSM format: authkey + password
-        HSM_KEY_LABEL: 'osia-sector-key',
-        // Points to remote YubiHSM on nv2
-        YUBIHSM_PKCS11_CONF: '/etc/yubihsm_pkcs11.conf',
-
-        // HashiCorp Vault Configuration
-        VAULT_ENABLED: 'true',
-        VAULT_ADDR: process.env.VAULT_ADDR || 'https://nv1.pocket.one:8200',
-        VAULT_TOKEN: process.env.VAULT_TOKEN,
-        VAULT_SKIP_VERIFY: process.env.VAULT_SKIP_VERIFY || 'true',
-
-        // Database configuration (PostgreSQL)
-        OSIA_DB_HOST: process.env.PGHOST ,
-        OSIA_DB_PORT: process.env.PGPORT || 5432,
-        OSIA_DB_USER: process.env.PGUSER ,
-        OSIA_DB_PASSWORD: process.env.PGPASSWORD ,
-        OSIA_DB_NAME: 'osia_dev',
-
         // Logging
-        LOG_LEVEL: 'info'
+        LOG_LEVEL: 'info',
+
+        // Database configuration
+        DB_HOST: '172.27.104.111',
+        DB_PORT: '5432',
+        DB_USER: 'postgres',
+        DB_PASSWORD: '',
+        DB_NAME: 'osia_dev',
+
+        // HSM configuration (SoftHSM2 for local PKCS#11 key storage)
+        HSM_ENABLED: 'true',
+        HSM_PROVIDER: 'softhsm',
+        HSM_LIBRARY: '/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so',
+        HSM_SLOT: '0',
+        HSM_PIN: '1234',
+        HSM_KEY_LABEL: 'osia-sector-key',
+
+        // Remote TRNG (Utimaco CryptoServer c3 via pkcs11-tool-remote SSH)
+        TRNG_ENABLED: 'true',
+        TRNG_SLOT: '5',
+        // PIN loaded from Vault (osia/hsm -> trng_pin) at runtime;
+        // env fallback only used if Vault is unavailable
+        TRNG_PIN: '',
+
+        // Vault configuration (nv2 Vault via ZeroTier)
+        VAULT_ENABLED: 'true',
+        VAULT_ADDR: 'https://172.27.170.210:8200',
+        VAULT_SKIP_VERIFY: '1',
+        VAULT_TOKEN: VAULT_TOKEN,
       },
 
       // Environment variables for production
@@ -100,7 +136,10 @@ module.exports = {
 
         // Server configuration
         PORT: 19020,
-        HOST: '0.0.0.0',
+        HOST: '127.0.0.1',
+
+        // TLS
+        NODE_EXTRA_CA_CERTS: '/etc/ssl/certs/vault-ca.crt',
 
         // UIN configuration
         UIN_DEFAULT_CHARSET: 'A-Z0-9',
@@ -111,24 +150,26 @@ module.exports = {
         // Supported sectors
         UIN_SUPPORTED_SECTORS: 'health,tax,finance,telco,stats,education,social,government',
 
-        // IMPORTANT: In production, sector secrets MUST be provided via environment
-        // or secure secret management (Vault, AWS Secrets Manager, etc.)
+        // IMPORTANT: In production, sector secrets come from Vault
         // Do NOT use the dev secrets in production!
 
         // CORS configuration (restrict in production)
         UIN_ENABLE_CORS: 'true',
-        UIN_CORS_ORIGIN: 'https://your-domain.com',
-
-        // Database configuration (PostgreSQL)
-        // IMPORTANT: In production, set these via environment or secure secret management
-        OSIA_DB_HOST: process.env.PGHOST || process.env.OSIA_DB_HOST ,
-        OSIA_DB_PORT: process.env.PGPORT || process.env.OSIA_DB_PORT || 5432,
-        OSIA_DB_USER: process.env.PGUSER || process.env.OSIA_DB_USER ,
-        OSIA_DB_PASSWORD: process.env.PGPASSWORD || process.env.OSIA_DB_PASSWORD ,
-        OSIA_DB_NAME: process.env.OSIA_DB_NAME || 'osia_dev',
+        UIN_CORS_ORIGIN: 'https://uin-generator.app',
 
         // Logging
-        LOG_LEVEL: 'warn'
+        LOG_LEVEL: 'warn',
+
+        // Vault
+        VAULT_ENABLED: 'true',
+        VAULT_ADDR: 'https://172.27.170.210:8200',
+        VAULT_SKIP_VERIFY: '1',
+        VAULT_TOKEN: VAULT_TOKEN,
+
+        // HSM
+        HSM_ENABLED: 'true',
+        TRNG_ENABLED: 'true',
+        TRNG_SLOT: '5',
       },
 
       // Restart policy
@@ -148,97 +189,6 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
 
       // Merge logs from different instances
-      merge_logs: true,
-
-      // Process management
-      kill_timeout: 5000,
-      listen_timeout: 3000,
-      shutdown_with_message: true
-    },
-
-    // React Web UI Service
-    {
-      name: 'osia-uin-web-dev',
-      script: 'npm',
-      args: 'run preview',
-      cwd: './web',
-      instances: 1,
-      exec_mode: 'fork',
-
-      // Environment variables
-      env: {
-        NODE_ENV: 'development'
-      },
-
-      env_production: {
-        NODE_ENV: 'production'
-      },
-
-      // Restart policy
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '300M',
-
-      // Restart on errors
-      min_uptime: '10s',
-      max_restarts: 10,
-
-      // Logging
-      error_file: './logs/web-err.log',
-      out_file: './logs/web-out.log',
-      log_file: './logs/web-combined.log',
-      time: true,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-
-      // Merge logs
-      merge_logs: true,
-
-      // Process management
-      kill_timeout: 5000,
-      listen_timeout: 3000,
-      shutdown_with_message: true
-    },
-
-    // Anna AI Assistant Service
-    {
-      name: 'osia-uin-ai-assistant',
-      script: './ai-assistant/server.mjs',
-      instances: 1,
-      exec_mode: 'fork',
-
-      // Interpreter (uses system Node.js)
-      interpreter: 'node',
-
-      // Environment variables
-      env: {
-        NODE_ENV: 'development',
-        AI_ASSISTANT_PORT: 19021,
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY
-      },
-
-      env_production: {
-        NODE_ENV: 'production',
-        AI_ASSISTANT_PORT: 19021,
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY
-      },
-
-      // Restart policy
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M',
-
-      // Restart on errors
-      min_uptime: '10s',
-      max_restarts: 10,
-
-      // Logging
-      error_file: './logs/ai-err.log',
-      out_file: './logs/ai-out.log',
-      log_file: './logs/ai-combined.log',
-      time: true,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-
-      // Merge logs
       merge_logs: true,
 
       // Process management
