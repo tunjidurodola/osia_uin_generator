@@ -1,0 +1,406 @@
+
+# (c) Secure Identity Alliance
+
+openapi: 3.0.0
+info:
+  description: |
+    The OSIA UIN Interface.
+
+    Change log:
+    
+    - 2.0.0:
+      - Redesign after group discussion
+    - 1.2.0:
+      - Add error structure on 400 errors
+      - Force additionalProperties to false when extension is not allowed
+      - Add transactionId as a parameter (mandatory)
+    - 1.1.0:
+      - Addition of security
+    - 1.0.0: Initial version
+
+  title: OSIA UIN Interface
+  version: 2.0.0
+  license:
+    name: SIA
+    url: "https://raw.githubusercontent.com/SecureIdentityAlliance/osia/master/LICENSE"
+servers:
+  - url: https://uin.com/
+tags:
+  - name: metadata
+    description: Interface metadata
+  - name: generate
+    description: Generate a new UIN
+  - name: use
+    description: Using a UIN
+paths:
+  /v1/modes:
+    get:
+      description: List available generation modes
+      operationId: getModes
+      tags:
+        - metadata
+      security:
+        - BearerAuth: [uin.metadata]
+      parameters:
+        - name: transactionId
+          in: query
+          description: The id of the transaction
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Read successful
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Mode'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Client must be authenticated
+        '403':
+          description: Read not allowed
+        '404':
+          description: Unknown record
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/sectors:
+    get:
+      description: List supported sectors
+      operationId: getSectors
+      tags:
+        - metadata
+      security:
+        - BearerAuth: [uin.metadata]
+      parameters:
+        - name: transactionId
+          in: query
+          description: The id of the transaction
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Read successful
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sector'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Client must be authenticated
+        '403':
+          description: Read not allowed
+        '404':
+          description: Unknown record
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/uin:
+    post:
+      description: |
+        Request the generation of a new UIN.
+        The request body should contain a list of attributes and their value, formatted as a json dictionary.
+        **Legacy Service**
+      operationId: generateUIN
+      tags:
+        - generate
+      security:
+        - BearerAuth: [uin.generate]
+      parameters:
+        - name: transactionId
+          in: query
+          description: The id of the transaction
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        description: A set of attributes for the person
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Attributes'
+            example:
+              firstName: John
+              lastName: Doo
+              dateOfBirth: "1984-11-19"
+      responses:
+        '200':
+          description: UIN is generated
+          content:
+            application/json:
+              schema:
+                type: string
+              example:
+                '"1235567890"'
+        '400':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Client must be authenticated
+        '403':
+          description: Service forbidden
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/generate:
+    post:
+      description: |
+        Request the generation of a new UIN
+      operationId: generate
+      tags:
+        - generate
+      security:
+        - BearerAuth: [uin.generate]
+      parameters:
+        - name: transactionId
+          in: query
+          description: The id of the transaction
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: A set of attributes for the person
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '200':
+          description: UIN is generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Client must be authenticated
+        '403':
+          description: Service forbidden
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/validate:
+    post:
+      description: |
+        Validate an existing UIN
+      operationId: validate
+      tags:
+        - use
+      security:
+        - BearerAuth: [uin.use]
+      parameters:
+        - name: transactionId
+          in: query
+          description: The id of the transaction
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: The UIN to validate
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateRequest'
+      responses:
+        '200':
+          description: Validation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateResponse'
+        '400':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Client must be authenticated
+        '403':
+          description: Service forbidden
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+    Attributes:
+      type: object
+      additionalProperties:
+        oneOf:
+        - type: string
+        - type: integer
+        - type: number
+        - type: boolean
+
+    ModeName:
+      type: string
+      enum: [FOUNDATIONAL, RANDOM, STRUCTURED, SECTOR]
+    Mode:
+      # TODO: list all properties
+      # TODO: flag mandatory properties
+      type: object
+      properties:
+        name:
+          $ref: '#/components/schemas/ModeName'
+      additionalProperties: false
+    Sector:
+      # TODO: list all properties
+      # TODO: flag mandatory properties
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 32
+      example:
+        HEALTH
+      additionalProperties: false
+
+    GenerateRequest:
+      # TODO: list all properties
+      # TODO: flag mandatory properties
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          $ref: '#/components/schemas/ModeName'
+        length:
+          type: integer
+          description: Expected length of the generated UIN
+          format: int32
+          maximum: 128
+        pattern:
+          type: string
+          description: Regular expression corresponding to the expected format of the UIN. Gives information about the charset, length, separator, and data elements used in the case of structured UIN
+          maximum: 256
+          example: "(?<dateOfBirth>[A-Za-z0-9]+)-(?<gender>[A-Z]{1})-(?<random>[0-9]{4})-(?<checksum>[0-9]{1})"
+        checksum:
+          type: string
+          enum: [ISO7064]
+          description: if provided, indicate that a checksum must be included following the given standard
+        sector:
+          type: string
+          description: Sector for derived UIN (mode SECTOR)
+        baseUIN:
+          type: string
+          description: 
+        issuer:
+          type: string
+          description: Issuer name (iss)
+        audience:
+          type: string
+          description: Audience (aud)
+        not_before:
+          type: string
+          description: Not before (nbf)
+        expiry:
+          type: string
+        attributes:
+          type: object
+          description: "Any business value needed for the calculation of the UIN for mode STRUCTURED (ex: date of birth, gender, etc.)"
+          additionalProperties: true
+          example:
+            gender: M
+            dateOfBirth: "1984-11-19"
+            birthPlace: Paris
+      additionalProperties: false
+
+    GenerateResponse:
+      # TODO: list all properties (validity info, issuer data, etc.)
+      # TODO: flag mandatory properties
+      type: object
+      required:
+        - uin
+      properties:
+        uin:
+          type: string
+          maxLength: 128
+      additionalProperties: false
+
+    ValidateRequest:
+      # TODO: list all properties (format, etc.)
+      # TODO: flag mandatory properties
+      type: object
+      required:
+        - uin
+      properties:
+        uin:
+          type: string
+          maxLength: 128
+      additionalProperties: false
+
+    ValidateResponse:
+      # TODO: list all properties
+      # TODO: flag mandatory properties
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          description: Name of the mode used for the generation
+          maxLength: 32
+        status:
+          type: string
+          enum: [VALID, INVALID, EXPIRED]
+      additionalProperties: false
