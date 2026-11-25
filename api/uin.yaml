@@ -1,4 +1,3 @@
-
 # (c) Secure Identity Alliance
 
 openapi: 3.0.0
@@ -6,10 +5,19 @@ info:
   description: |
     The OSIA UIN Interface.
 
+    Provides standardized REST APIs for Unique Identification Number (UIN)
+    generation across four modes (Foundational, Random, Structured, and Sector Token),
+    checksum and format validation, batch generation, pool lifecycle management
+    (pre-generation, claiming, assignment, release, retirement, and revocation),
+    display format configuration, and cryptographic/HSM status reporting.
+
     Change log:
-    
+
     - 2.0.0:
       - Redesign after group discussion
+      - Added multi-mode generation (FOUNDATIONAL, RANDOM, STRUCTURED, SECTOR)
+      - Added character set, checksum (ISO 7064, Luhn, Damm), formatting, and lifecycle claims
+      - Added batch generation, pool lifecycle management, lookup/audit, format templates, and crypto status endpoints
     - 1.2.0:
       - Add error structure on 400 errors
       - Force additionalProperties to false when extension is not allowed
@@ -24,30 +32,87 @@ info:
     name: SIA
     url: "https://raw.githubusercontent.com/SecureIdentityAlliance/osia/master/LICENSE"
 servers:
-  - url: https://uin.com/
+  - url: https://uin-generator.app/api
+    description: Reference implementation server
+  - url: https://uin.com
+    description: OSIA specification placeholder server
 tags:
   - name: metadata
-    description: Interface metadata
+    description: Interface metadata, health, and cryptographic provider status
   - name: generate
-    description: Generate a new UIN
+    description: Stateless UIN generation (single and batch)
   - name: use
-    description: Using a UIN
+    description: UIN validation, lookup, and audit trail inspection
+  - name: pool
+    description: UIN pool lifecycle management (pre-generate, claim, assign, release, status transitions)
+  - name: formats
+    description: Display formatting templates for UIN presentation
 paths:
+  /v1/health:
+    get:
+      summary: Check service health
+      description: Service health check including HSM and secret-store readiness
+      operationId: getHealth
+      tags:
+        - metadata
+      security:
+        - BearerAuth: [uin.metadata]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/crypto/status:
+    get:
+      summary: Get cryptographic and HSM status
+      description: Report active cryptographic entropy source (HSM hardware TRNG vs software CSPRNG) and Vault status
+      operationId: getCryptoStatus
+      tags:
+        - metadata
+      security:
+        - BearerAuth: [uin.metadata]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Cryptographic status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CryptoStatusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
   /v1/modes:
     get:
-      description: List available generation modes
+      summary: List generation modes
+      description: List available UIN generation modes and their default parameters
       operationId: getModes
       tags:
         - metadata
       security:
         - BearerAuth: [uin.metadata]
       parameters:
-        - name: transactionId
-          in: query
-          description: The id of the transaction
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TransactionId'
       responses:
         '200':
           description: Read successful
@@ -58,38 +123,27 @@ paths:
                 items:
                   $ref: '#/components/schemas/Mode'
         '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Client must be authenticated
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Read not allowed
+          $ref: '#/components/responses/Forbidden'
         '404':
-          description: Unknown record
+          $ref: '#/components/responses/NotFound'
         '500':
-          description: Unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/UnexpectedError'
+
   /v1/sectors:
     get:
-      description: List supported sectors
+      summary: List supported sectors
+      description: List supported sectors for unlinkable sector-token derivation
       operationId: getSectors
       tags:
         - metadata
       security:
         - BearerAuth: [uin.metadata]
       parameters:
-        - name: transactionId
-          in: query
-          description: The id of the transaction
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TransactionId'
       responses:
         '200':
           description: Read successful
@@ -100,42 +154,30 @@ paths:
                 items:
                   $ref: '#/components/schemas/Sector'
         '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Client must be authenticated
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Read not allowed
+          $ref: '#/components/responses/Forbidden'
         '404':
-          description: Unknown record
+          $ref: '#/components/responses/NotFound'
         '500':
-          description: Unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/UnexpectedError'
 
   /v1/uin:
     post:
+      summary: Generate legacy UIN
       description: |
         Request the generation of a new UIN.
-        The request body should contain a list of attributes and their value, formatted as a json dictionary.
-        **Legacy Service**
+        The request body should contain a list of attributes and their value, formatted as a JSON dictionary.
+        **Legacy Service (OSIA v1.2.0 compatible)**
       operationId: generateUIN
       tags:
         - generate
       security:
         - BearerAuth: [uin.generate]
       parameters:
-        - name: transactionId
-          in: query
-          description: The id of the transaction
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TransactionId'
       requestBody:
         required: true
         description: A set of attributes for the person
@@ -145,7 +187,7 @@ paths:
               $ref: '#/components/schemas/Attributes'
             example:
               firstName: John
-              lastName: Doo
+              lastName: Doe
               dateOfBirth: "1984-11-19"
       responses:
         '200':
@@ -154,43 +196,32 @@ paths:
             application/json:
               schema:
                 type: string
-              example:
-                '"1235567890"'
+              example: "ABCD1234EFGH5678XYZ"
         '400':
-          description: Unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Client must be authenticated
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Service forbidden
+          $ref: '#/components/responses/Forbidden'
         '500':
-          description: Unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/UnexpectedError'
 
   /v1/generate:
     post:
+      summary: Generate UIN or sector token
       description: |
-        Request the generation of a new UIN
+        Request stateless generation of a new UIN or sector token with configurable mode,
+        character set, checksum algorithm, display formatting, lifecycle claims, and output representation.
       operationId: generate
       tags:
         - generate
       security:
         - BearerAuth: [uin.generate]
       parameters:
-        - name: transactionId
-          in: query
-          description: The id of the transaction
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TransactionId'
       requestBody:
-        description: A set of attributes for the person
+        required: true
+        description: UIN generation parameters and optional subject attributes
         content:
           application/json:
             schema:
@@ -203,40 +234,63 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
         '400':
-          description: Unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Client must be authenticated
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Service forbidden
+          $ref: '#/components/responses/Forbidden'
         '500':
-          description: Unexpected error
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/batch:
+    post:
+      summary: Generate batch of UINs
+      description: Generate multiple UINs in a single stateless request
+      operationId: generateBatch
+      tags:
+        - generate
+      security:
+        - BearerAuth: [uin.generate]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: true
+        description: Batch generation count and UIN generation parameters
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchGenerateRequest'
+      responses:
+        '200':
+          description: Batch of UINs generated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/BatchGenerateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
 
   /v1/validate:
     post:
+      summary: Validate UIN
       description: |
-        Validate an existing UIN
+        Validate an existing UIN (syntax, length, character set, checksum, and optional registry lifecycle status)
       operationId: validate
       tags:
         - use
       security:
         - BearerAuth: [uin.use]
       parameters:
-        - name: transactionId
-          in: query
-          description: The id of the transaction
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/TransactionId'
       requestBody:
-        description: The UIN to validate
+        required: true
+        description: The UIN and optional validation constraints
         content:
           application/json:
             schema:
@@ -249,21 +303,512 @@ paths:
               schema:
                 $ref: '#/components/schemas/ValidateResponse'
         '400':
-          description: Unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Client must be authenticated
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Service forbidden
+          $ref: '#/components/responses/Forbidden'
         '500':
-          description: Unexpected error
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/pool/stats:
+    get:
+      summary: Get pool statistics
+      description: Retrieve UIN pool counts grouped by scope and lifecycle status
+      operationId: getPoolStats
+      tags:
+        - pool
+      security:
+        - BearerAuth: [uin.pool]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - name: scope
+          in: query
+          description: Optional pool scope filter (e.g. foundational, civil-registry)
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+      responses:
+        '200':
+          description: Pool statistics retrieved
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/PoolStatsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/pool/peek:
+    get:
+      summary: Peek at pool UINs
+      description: Preview UINs in the pool by status without claiming or mutating state
+      operationId: peekPool
+      tags:
+        - pool
+      security:
+        - BearerAuth: [uin.pool]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/UinStatus'
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: Matching pool records returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UinRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/uin/pre-generate:
+    post:
+      summary: Pre-generate UINs into pool
+      description: Batch pre-generate UINs into the pool in AVAILABLE status
+      operationId: preGenerateUins
+      tags:
+        - pool
+      security:
+        - BearerAuth: [uin.pool]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreGenerateRequest'
+      responses:
+        '200':
+          description: UINs pre-generated into pool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreGenerateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/uin/claim:
+    post:
+      summary: Claim an available UIN
+      description: Atomically claim an AVAILABLE UIN from the pool (AVAILABLE -> PREASSIGNED)
+      operationId: claimUin
+      tags:
+        - pool
+      security:
+        - BearerAuth: [uin.pool]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimRequest'
+      responses:
+        '200':
+          description: UIN claimed and transitioned to PREASSIGNED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UinRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/uin/assign:
+    post:
+      summary: Assign a pre-assigned UIN
+      description: Bind a PREASSIGNED UIN to an entity reference (PREASSIGNED -> ASSIGNED)
+      operationId: assignUin
+      tags:
+        - pool
+      security:
+        - BearerAuth: [uin.pool]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+      responses:
+        '200':
+          description: UIN assigned to entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UinRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/uin/release:
+    post:
+      summary: Release a pre-assigned UIN
+      description: Release an unassigned PREASSIGNED UIN back to the pool (PREASSIGNED -> AVAILABLE)
+      operationId: releaseUin
+      tags:
+        - pool
+      security:
+        - BearerAuth: [uin.pool]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseRequest'
+      responses:
+        '200':
+          description: UIN released back to AVAILABLE status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UinRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/uin/status:
+    post:
+      summary: Update UIN terminal status
+      description: Transition an ASSIGNED UIN to a terminal lifecycle state (RETIRED or REVOKED)
+      operationId: updateUinStatus
+      tags:
+        - pool
+      security:
+        - BearerAuth: [uin.pool]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusUpdateRequest'
+      responses:
+        '200':
+          description: UIN lifecycle status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UinRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/uin/cleanup-preassigned:
+    post:
+      summary: Cleanup expired pre-assigned UINs
+      description: Release stale PREASSIGNED UINs whose reservation TTL has expired back to AVAILABLE
+      operationId: cleanupPreassignedUins
+      tags:
+        - pool
+      security:
+        - BearerAuth: [uin.pool]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CleanupRequest'
+      responses:
+        '200':
+          description: Stale pre-assigned UINs released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CleanupResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/uin/{uin}:
+    get:
+      summary: Look up UIN details
+      description: Look up metadata, entropy provenance, formatting, and lifecycle state for a UIN
+      operationId: getUin
+      tags:
+        - use
+      security:
+        - BearerAuth: [uin.use]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - $ref: '#/components/parameters/UinPathParam'
+      responses:
+        '200':
+          description: UIN record retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UinRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/uin/{uin}/audit:
+    get:
+      summary: Get UIN audit trail
+      description: Retrieve the immutable append-only lifecycle audit trail for a UIN
+      operationId: getUinAudit
+      tags:
+        - use
+      security:
+        - BearerAuth: [uin.use]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - $ref: '#/components/parameters/UinPathParam'
+      responses:
+        '200':
+          description: Audit events retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/formats:
+    get:
+      summary: List format configurations
+      description: List all registered UIN display format configurations
+      operationId: listFormats
+      tags:
+        - formats
+      security:
+        - BearerAuth: [uin.metadata]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Format configurations retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FormatConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+    post:
+      summary: Create format configuration
+      description: Create a new UIN display format configuration
+      operationId: createFormat
+      tags:
+        - formats
+      security:
+        - BearerAuth: [uin.formats]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormatConfig'
+      responses:
+        '201':
+          description: Format configuration created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormatConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+
+  /v1/formats/{code}:
+    get:
+      summary: Get format configuration
+      description: Retrieve a UIN display format configuration by code
+      operationId: getFormat
+      tags:
+        - formats
+      security:
+        - BearerAuth: [uin.metadata]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - $ref: '#/components/parameters/FormatCodeParam'
+      responses:
+        '200':
+          description: Format configuration retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormatConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+    put:
+      summary: Update format configuration
+      description: Update an existing UIN display format configuration
+      operationId: updateFormat
+      tags:
+        - formats
+      security:
+        - BearerAuth: [uin.formats]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - $ref: '#/components/parameters/FormatCodeParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormatConfigUpdate'
+      responses:
+        '200':
+          description: Format configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormatConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
+    delete:
+      summary: Delete format configuration
+      description: Delete a UIN display format configuration
+      operationId: deleteFormat
+      tags:
+        - formats
+      security:
+        - BearerAuth: [uin.formats]
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - $ref: '#/components/parameters/FormatCodeParam'
+      responses:
+        '204':
+          description: Format configuration deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/UnexpectedError'
 
 components:
   securitySchemes:
@@ -271,6 +816,53 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    TransactionId:
+      name: transactionId
+      in: query
+      description: The id of the transaction
+      required: true
+      schema:
+        type: string
+        maxLength: 128
+    UinPathParam:
+      name: uin
+      in: path
+      description: Canonical (unformatted) UIN value
+      required: true
+      schema:
+        type: string
+        maxLength: 128
+    FormatCodeParam:
+      name: code
+      in: path
+      description: Unique format template code
+      required: true
+      schema:
+        type: string
+        maxLength: 64
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Client must be authenticated
+    Forbidden:
+      description: Service or read operation forbidden
+    NotFound:
+      description: Unknown record
+    UnexpectedError:
+      description: Unexpected error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
   schemas:
     Error:
       type: object
@@ -283,41 +875,191 @@ components:
           format: int32
         message:
           type: string
+      additionalProperties: false
+
     Attributes:
       type: object
       additionalProperties:
-        oneOf:
-        - type: string
-        - type: integer
-        - type: number
-        - type: boolean
+        anyOf:
+          - type: string
+          - type: integer
+          - type: number
+          - type: boolean
 
     ModeName:
       type: string
       enum: [FOUNDATIONAL, RANDOM, STRUCTURED, SECTOR]
-    Mode:
-      # TODO: list all properties
-      # TODO: flag mandatory properties
+      description: |
+        - FOUNDATIONAL: High-entropy, lifelong identifier with no embedded PII
+        - RANDOM: Configurable random identifier with selectable charset and checksum
+        - STRUCTURED: Template-based identifier with embedded attribute values
+        - SECTOR: Cryptographically derived, unlinkable sector-specific token (HMAC-SHA256)
+
+    CharsetType:
+      type: string
+      enum: [ALPHANUMERIC, NUMERIC, ALPHABETIC, HEXADECIMAL]
+      default: ALPHANUMERIC
+      description: |
+        Character repertoire used when generating random segments:
+        - ALPHANUMERIC: A-Z, 0-9
+        - NUMERIC: 0-9
+        - ALPHABETIC: A-Z
+        - HEXADECIMAL: 0-9, A-F
+
+    ChecksumAlgorithm:
+      type: string
+      enum: [NONE, ISO7064, ISO7064_MOD37_2, ISO7064_MOD97_10, LUHN, DAMM]
+      default: ISO7064_MOD37_2
+      description: |
+        Check-character algorithm appended to the identifier (ISO7064 aliases ISO7064_MOD37_2).
+
+    OutputFormat:
+      type: string
+      enum: [JSON, JWT, JSON_LD]
+      default: JSON
+      description: Serialization envelope for the generated identifier and lifecycle claims
+
+    UinStatus:
+      type: string
+      enum: [AVAILABLE, PREASSIGNED, ASSIGNED, RETIRED, REVOKED]
+      description: OSIA UIN lifecycle state
+
+    FormattingOptions:
       type: object
+      description: Display formatting rules (applied for presentation; canonical UIN is stored unformatted)
+      properties:
+        enabled:
+          type: boolean
+          default: false
+        separator:
+          type: string
+          maxLength: 4
+          default: "-"
+          example: "-"
+        groupSize:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 32
+          default: 4
+          example: 4
+        prefix:
+          type: string
+          maxLength: 16
+        suffix:
+          type: string
+          maxLength: 16
+        formatCode:
+          type: string
+          maxLength: 64
+          description: Optional reference to a registered format configuration
+      additionalProperties: false
+
+    LifecycleClaims:
+      type: object
+      description: Optional JWT / JSON-LD lifecycle metadata claims bound to the issued identifier
+      properties:
+        issuer:
+          type: string
+          maxLength: 256
+          description: Issuer identifier (iss)
+          example: "https://registry.example.gov"
+        audience:
+          type: string
+          maxLength: 256
+          description: Intended relying party or sector audience (aud)
+          example: "health-exchange"
+        notBefore:
+          type: string
+          format: date-time
+          description: Activation timestamp (nbf) in RFC 3339 format
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Expiration timestamp (exp) in RFC 3339 format; null when infiniteLifetime is true
+        ttlMinutes:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Relative lifetime in minutes from issuance (alternative to expiresAt)
+        infiniteLifetime:
+          type: boolean
+          default: true
+          description: When true, the identifier does not expire
+      additionalProperties: false
+
+    EntropyProvenance:
+      type: object
+      required:
+        - hardware
+        - source
+      properties:
+        hardware:
+          type: boolean
+          description: True if generated from a hardware HSM TRNG; false if software CSPRNG
+        source:
+          type: string
+          maxLength: 128
+          example: "Thales Luna Hardware TRNG"
+        fipsLevel:
+          type: integer
+          format: int32
+          nullable: true
+          example: 3
+      additionalProperties: false
+
+    Mode:
+      type: object
+      required:
+        - name
+        - description
+        - defaultLength
+        - supportsPiiAttributes
       properties:
         name:
           $ref: '#/components/schemas/ModeName'
+        description:
+          type: string
+          maxLength: 256
+        defaultLength:
+          type: integer
+          format: int32
+          example: 19
+        defaultCharset:
+          $ref: '#/components/schemas/CharsetType'
+        defaultChecksum:
+          $ref: '#/components/schemas/ChecksumAlgorithm'
+        supportsPiiAttributes:
+          type: boolean
+          description: False for FOUNDATIONAL/RANDOM/SECTOR; true for STRUCTURED templates
+        requiresBaseUin:
+          type: boolean
+          description: True only for SECTOR mode
       additionalProperties: false
+
     Sector:
-      # TODO: list all properties
-      # TODO: flag mandatory properties
       type: object
+      required:
+        - code
+        - name
       properties:
-        name:
+        code:
           type: string
           maxLength: 32
-      example:
-        HEALTH
+          enum: [health, tax, finance, telco, stats, education, social, government]
+          example: "health"
+        name:
+          type: string
+          maxLength: 64
+          example: "HEALTH"
+        description:
+          type: string
+          maxLength: 256
+          example: "Healthcare / Medical services"
       additionalProperties: false
 
     GenerateRequest:
-      # TODO: list all properties
-      # TODO: flag mandatory properties
       type: object
       required:
         - mode
@@ -326,38 +1068,58 @@ components:
           $ref: '#/components/schemas/ModeName'
         length:
           type: integer
-          description: Expected length of the generated UIN
+          description: Expected canonical length of the generated UIN (excluding display separators)
           format: int32
+          minimum: 4
           maximum: 128
+          default: 19
+        charset:
+          $ref: '#/components/schemas/CharsetType'
+        excludeAmbiguous:
+          type: boolean
+          default: false
+          description: Exclude visually ambiguous characters (0, O, I, 1, l)
+        checksum:
+          $ref: '#/components/schemas/ChecksumAlgorithm'
+        formatting:
+          $ref: '#/components/schemas/FormattingOptions'
         pattern:
           type: string
-          description: Regular expression corresponding to the expected format of the UIN. Gives information about the charset, length, separator, and data elements used in the case of structured UIN
-          maximum: 256
+          description: Template or regular expression defining structure, charset, separator, and embedded elements for STRUCTURED mode
+          maxLength: 256
           example: "(?<dateOfBirth>[A-Za-z0-9]+)-(?<gender>[A-Z]{1})-(?<random>[0-9]{4})-(?<checksum>[0-9]{1})"
-        checksum:
-          type: string
-          enum: [ISO7064]
-          description: if provided, indicate that a checksum must be included following the given standard
         sector:
           type: string
-          description: Sector for derived UIN (mode SECTOR)
+          maxLength: 32
+          description: Target sector code or name for derived tokens (required when mode is SECTOR)
+          example: "health"
         baseUIN:
           type: string
-          description: 
+          maxLength: 128
+          description: Foundational UIN from which to derive a sector token (required when mode is SECTOR; never logged or exposed externally)
         issuer:
           type: string
+          maxLength: 256
           description: Issuer name (iss)
         audience:
           type: string
+          maxLength: 256
           description: Audience (aud)
         not_before:
           type: string
-          description: Not before (nbf)
+          format: date-time
+          description: Not before timestamp (nbf)
         expiry:
           type: string
+          format: date-time
+          description: Expiration timestamp (exp)
+        lifecycle:
+          $ref: '#/components/schemas/LifecycleClaims'
+        outputFormat:
+          $ref: '#/components/schemas/OutputFormat'
         attributes:
           type: object
-          description: "Any business value needed for the calculation of the UIN for mode STRUCTURED (ex: date of birth, gender, etc.)"
+          description: Business attributes needed for STRUCTURED UIN calculation (e.g. dateOfBirth, gender, birthPlace)
           additionalProperties: true
           example:
             gender: M
@@ -366,20 +1128,329 @@ components:
       additionalProperties: false
 
     GenerateResponse:
-      # TODO: list all properties (validity info, issuer data, etc.)
-      # TODO: flag mandatory properties
       type: object
       required:
         - uin
+        - mode
+        - issuedAt
       properties:
         uin:
           type: string
           maxLength: 128
+          description: Canonical generated UIN or sector token
+          example: "ABCD1234EFGH5678XYZ"
+        formattedUin:
+          type: string
+          maxLength: 192
+          description: Display-formatted representation when formatting is enabled
+          example: "ABCD-1234-EFGH-5678-XYZ"
+        mode:
+          $ref: '#/components/schemas/ModeName'
+        sector:
+          type: string
+          maxLength: 32
+          description: Sector identifier (populated when mode is SECTOR)
+        checksum:
+          $ref: '#/components/schemas/ChecksumAlgorithm'
+        integrityHash:
+          type: string
+          maxLength: 64
+          description: RIPEMD-160(SHA3-256(UIN + salt)) verification digest
+        issuedAt:
+          type: string
+          format: date-time
+        issuer:
+          type: string
+          maxLength: 256
+        audience:
+          type: string
+          maxLength: 256
+        notBefore:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        infiniteLifetime:
+          type: boolean
+        entropy:
+          $ref: '#/components/schemas/EntropyProvenance'
+        jwt:
+          type: string
+          description: RFC 7519 signed JWT representation (populated when outputFormat is JWT)
+        jsonLd:
+          type: object
+          additionalProperties: true
+          description: W3C JSON-LD verifiable representation (populated when outputFormat is JSON_LD)
       additionalProperties: false
 
     ValidateRequest:
-      # TODO: list all properties (format, etc.)
-      # TODO: flag mandatory properties
+      type: object
+      required:
+        - uin
+      properties:
+        uin:
+          type: string
+          maxLength: 192
+          description: Canonical or formatted UIN to validate
+        mode:
+          $ref: '#/components/schemas/ModeName'
+        checksum:
+          $ref: '#/components/schemas/ChecksumAlgorithm'
+        charset:
+          $ref: '#/components/schemas/CharsetType'
+        expectedLength:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 128
+        pattern:
+          type: string
+          maxLength: 256
+        checkRegistry:
+          type: boolean
+          default: false
+          description: When true, also verify lifecycle state and expiration against the UIN pool registry
+      additionalProperties: false
+
+    ValidateResponse:
+      type: object
+      required:
+        - valid
+        - mode
+        - status
+      properties:
+        valid:
+          type: boolean
+          description: True if syntax, checksum, and (if checked) registry lifecycle status are valid
+        mode:
+          type: string
+          description: Name of the mode used or inferred for validation
+          maxLength: 32
+        status:
+          type: string
+          enum: [VALID, INVALID, EXPIRED, REVOKED, RETIRED]
+        canonicalUin:
+          type: string
+          maxLength: 128
+        checksumValid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+          description: Detailed validation failure reasons when valid is false
+      additionalProperties: false
+
+    BatchGenerateRequest:
+      type: object
+      required:
+        - count
+        - options
+      properties:
+        count:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000
+          example: 25
+        options:
+          $ref: '#/components/schemas/GenerateRequest'
+      additionalProperties: false
+
+    BatchGenerateResponse:
+      type: object
+      required:
+        - count
+        - items
+      properties:
+        count:
+          type: integer
+          format: int32
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenerateResponse'
+      additionalProperties: false
+
+    UinRecord:
+      type: object
+      required:
+        - uin
+        - status
+        - mode
+        - createdAt
+        - updatedAt
+      properties:
+        uin:
+          type: string
+          maxLength: 128
+        formattedUin:
+          type: string
+          maxLength: 192
+        status:
+          $ref: '#/components/schemas/UinStatus'
+        mode:
+          $ref: '#/components/schemas/ModeName'
+        scope:
+          type: string
+          maxLength: 64
+          example: "foundational"
+        formatCode:
+          type: string
+          maxLength: 64
+        claimedBy:
+          type: string
+          maxLength: 128
+          nullable: true
+        assignedToRef:
+          type: string
+          maxLength: 128
+          nullable: true
+        reason:
+          type: string
+          maxLength: 256
+          nullable: true
+        entropy:
+          $ref: '#/components/schemas/EntropyProvenance'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    PoolStatsResponse:
+      type: object
+      required:
+        - total
+        - byStatus
+      properties:
+        scope:
+          type: string
+          maxLength: 64
+          nullable: true
+        total:
+          type: integer
+          format: int64
+        byStatus:
+          type: object
+          required:
+            - AVAILABLE
+            - PREASSIGNED
+            - ASSIGNED
+            - RETIRED
+            - REVOKED
+          properties:
+            AVAILABLE:
+              type: integer
+              format: int64
+            PREASSIGNED:
+              type: integer
+              format: int64
+            ASSIGNED:
+              type: integer
+              format: int64
+            RETIRED:
+              type: integer
+              format: int64
+            REVOKED:
+              type: integer
+              format: int64
+          additionalProperties: false
+      additionalProperties: false
+
+    PreGenerateRequest:
+      type: object
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 10000
+          example: 100
+        scope:
+          type: string
+          maxLength: 64
+          default: "foundational"
+        mode:
+          $ref: '#/components/schemas/ModeName'
+        length:
+          type: integer
+          format: int32
+          minimum: 4
+          maximum: 128
+          default: 19
+        charset:
+          $ref: '#/components/schemas/CharsetType'
+        excludeAmbiguous:
+          type: boolean
+          default: false
+        checksum:
+          $ref: '#/components/schemas/ChecksumAlgorithm'
+        formatCode:
+          type: string
+          maxLength: 64
+      additionalProperties: false
+
+    PreGenerateResponse:
+      type: object
+      required:
+        - generated
+        - scope
+        - status
+      properties:
+        generated:
+          type: integer
+          format: int32
+        scope:
+          type: string
+          maxLength: 64
+        status:
+          $ref: '#/components/schemas/UinStatus'
+        entropy:
+          $ref: '#/components/schemas/EntropyProvenance'
+      additionalProperties: false
+
+    ClaimRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          maxLength: 64
+          default: "foundational"
+        claimedBy:
+          type: string
+          maxLength: 128
+          example: "civil-registry"
+        ttlSeconds:
+          type: integer
+          format: int32
+          minimum: 60
+          description: Reservation window before stale pre-assigned UINs can be reclaimed
+      additionalProperties: false
+
+    AssignRequest:
+      type: object
+      required:
+        - uin
+        - entityId
+      properties:
+        uin:
+          type: string
+          maxLength: 128
+        entityId:
+          type: string
+          maxLength: 128
+          description: External registry person/entity reference (non-PII surrogate key)
+          example: "PERSON-12345"
+      additionalProperties: false
+
+    ReleaseRequest:
       type: object
       required:
         - uin
@@ -387,20 +1458,234 @@ components:
         uin:
           type: string
           maxLength: 128
+        reason:
+          type: string
+          maxLength: 256
       additionalProperties: false
 
-    ValidateResponse:
-      # TODO: list all properties
-      # TODO: flag mandatory properties
+    StatusUpdateRequest:
       type: object
       required:
-        - mode
+        - uin
+        - status
       properties:
-        mode:
+        uin:
           type: string
-          description: Name of the mode used for the generation
-          maxLength: 32
+          maxLength: 128
         status:
           type: string
-          enum: [VALID, INVALID, EXPIRED]
+          enum: [RETIRED, REVOKED]
+        reason:
+          type: string
+          maxLength: 256
+          example: "Death registration"
+      additionalProperties: false
+
+    CleanupRequest:
+      type: object
+      properties:
+        olderThanSeconds:
+          type: integer
+          format: int32
+          minimum: 60
+          default: 3600
+        scope:
+          type: string
+          maxLength: 64
+      additionalProperties: false
+
+    CleanupResponse:
+      type: object
+      required:
+        - releasedCount
+      properties:
+        releasedCount:
+          type: integer
+          format: int32
+      additionalProperties: false
+
+    AuditEvent:
+      type: object
+      required:
+        - id
+        - uin
+        - eventType
+        - timestamp
+      properties:
+        id:
+          type: string
+          maxLength: 64
+        uin:
+          type: string
+          maxLength: 128
+        eventType:
+          type: string
+          enum: [PRE_GENERATED, GENERATED, CLAIMED, ASSIGNED, RELEASED, RETIRED, REVOKED, VALIDATED]
+        previousStatus:
+          $ref: '#/components/schemas/UinStatus'
+        newStatus:
+          $ref: '#/components/schemas/UinStatus'
+        actor:
+          type: string
+          maxLength: 128
+        reason:
+          type: string
+          maxLength: 256
+        transactionId:
+          type: string
+          maxLength: 128
+        timestamp:
+          type: string
+          format: date-time
+      additionalProperties: false
+
+    FormatConfig:
+      type: object
+      required:
+        - code
+        - name
+        - separator
+        - groupSize
+      properties:
+        code:
+          type: string
+          maxLength: 64
+          example: "STD-4X4"
+        name:
+          type: string
+          maxLength: 128
+          example: "Standard 4-character dash grouping"
+        separator:
+          type: string
+          maxLength: 4
+          example: "-"
+        groupSize:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 32
+          example: 4
+        prefix:
+          type: string
+          maxLength: 16
+        suffix:
+          type: string
+          maxLength: 16
+        description:
+          type: string
+          maxLength: 256
+      additionalProperties: false
+
+    FormatConfigUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        separator:
+          type: string
+          maxLength: 4
+        groupSize:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 32
+        prefix:
+          type: string
+          maxLength: 16
+        suffix:
+          type: string
+          maxLength: 16
+        description:
+          type: string
+          maxLength: 256
+      additionalProperties: false
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+          example: "2.0.0"
+        crypto:
+          type: object
+          properties:
+            hsm:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                hasTrng:
+                  type: boolean
+              additionalProperties: false
+            vault:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                authenticated:
+                  type: boolean
+              additionalProperties: false
+          additionalProperties: false
+      additionalProperties: false
+
+    CryptoStatusResponse:
+      type: object
+      required:
+        - hsm
+        - vault
+      properties:
+        hsm:
+          type: object
+          required:
+            - enabled
+            - hasTrng
+            - mode
+            - randomSource
+          properties:
+            enabled:
+              type: boolean
+            provider:
+              type: string
+              example: "thales"
+            providerName:
+              type: string
+              example: "Thales Luna"
+            providerType:
+              type: string
+              enum: [production, cloud, compact, development]
+            hasTrng:
+              type: boolean
+            fipsLevel:
+              type: integer
+              format: int32
+              nullable: true
+            mode:
+              type: string
+              enum: [hardware, software]
+            randomSource:
+              type: string
+              example: "Thales Luna Hardware TRNG"
+          additionalProperties: false
+        vault:
+          type: object
+          required:
+            - enabled
+            - authenticated
+          properties:
+            enabled:
+              type: boolean
+            authenticated:
+              type: boolean
+            address:
+              type: string
+          additionalProperties: false
+        secretsLoaded:
+          type: integer
+          format: int32
       additionalProperties: false
