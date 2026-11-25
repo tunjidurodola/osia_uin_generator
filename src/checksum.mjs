@@ -85,8 +85,8 @@ export function computeIso7064(input) {
 
   checksum = (38 - checksum) % 37;
 
-  // Return as character from charset
-  return charset[checksum];
+  // MOD 37-2 has 37 possible check values; the 37th is '*'.
+  return (charset + '*')[checksum];
 }
 
 /**

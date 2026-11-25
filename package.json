@@ -1,15 +1,17 @@
 {
   "name": "osia-uin-generator",
   "version": "2.0.0",
-  "description": "OSIA-compliant UIN Generator with PostgreSQL persistence, foundational UINs, sector tokens, and lifecycle management",
+  "description": "OSIA UIN Interface 2.0.0 reference implementation: UIN generation, validation, sector tokens and pool lifecycle management with PostgreSQL persistence",
   "type": "module",
   "main": "src/uinGenerator.mjs",
   "engines": {
     "node": ">=20.20.0 <21"
   },
   "scripts": {
-    "test": "node src/test.mjs",
+    "test": "node src/test.mjs && node --test test/osia.unit.test.mjs",
     "test:db": "node src/testDb.mjs",
+    "test:api": "node --test test/osia.api.test.mjs",
+    "lint:api": "npx -y @redocly/cli@2 lint api/uin.yaml",
     "start": "node src/server.mjs",
     "cli": "node src/cli.mjs",
     "migrate": "node src/migrate.mjs"
@@ -25,12 +27,16 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "express": "^4.18.2",
     "express-rate-limit": "^8.2.1",
     "graphene-pk11": "^2.3.6",
     "helmet": "^8.1.0",
+    "jose": "^6.2.18",
     "knex": "^3.1.0",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "yaml": "^2.9.1"
   },
   "overrides": {
     "lodash": "^4.17.24",

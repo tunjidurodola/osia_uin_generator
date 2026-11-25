@@ -44,6 +44,13 @@ async function refreshCache() {
 }
 
 /**
+ * Drop the cached format table so the next lookup reloads it.
+ */
+export function invalidateFormatCache() {
+  cacheTimestamp = 0;
+}
+
+/**
  * Get all available formats
  * @returns {Promise<Array>} List of format configurations
  */
@@ -128,15 +135,20 @@ export function applyFormat(uin, format) {
     segments = segments.replace(/[{}]/g, '').split(',').map(Number);
   }
 
-  // Build formatted string
+  // Build formatted string. Once the segment list is exhausted the last
+  // segment length repeats, so no characters are ever dropped.
   const parts = [];
   let pos = 0;
+  let idx = 0;
 
-  for (const len of segments) {
-    if (pos >= processed.length) break;
+  while (pos < processed.length && segments.length > 0) {
+    const len = segments[Math.min(idx, segments.length - 1)];
+    if (!(len > 0)) break;
     parts.push(processed.substring(pos, pos + len));
     pos += len;
+    idx++;
   }
+  if (pos < processed.length) parts.push(processed.substring(pos));
 
   // Join with separator
   const separator = format.separator || '';
