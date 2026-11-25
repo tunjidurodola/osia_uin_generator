@@ -140,6 +140,26 @@ function MermaidDiagram({ chart, title }) {
 }
 
 const API_BASE_URL = '/api';
+
+// OSIA UIN Interface v2 call: adds a fresh transactionId and turns an OSIA
+// { code, message } error into a thrown Error.
+async function osiaRequest(method, path, { query = {}, body } = {}) {
+  const params = new URLSearchParams({ transactionId: `web-${crypto.randomUUID()}` });
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+  }
+  const response = await fetch(`${API_BASE_URL}/v1${path}?${params}`, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined
+  });
+  if (response.status === 204) return null;
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.message || `Request failed (${response.status})`);
+  }
+  return data;
+}
 const OSIA_LOGO_URL = 'https://mma.prnewswire.com/media/2394623/OSIA_Logo.jpg';
 
 // Tab component
@@ -175,13 +195,15 @@ function PoolDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/pool/stats?scope=${scopeValue}`);
-      const data = await response.json();
-      if (data.success) {
-        setStats(data.stats);
-      } else {
-        setError(data.error || 'Failed to fetch stats');
-      }
+      const data = await osiaRequest('GET', '/pool/stats', { query: { scope: scopeValue } });
+      setStats({
+        total: data.total,
+        available: data.byStatus.AVAILABLE,
+        preassigned: data.byStatus.PREASSIGNED,
+        assigned: data.byStatus.ASSIGNED,
+        retired: data.byStatus.RETIRED,
+        revoked: data.byStatus.REVOKED
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -197,11 +219,7 @@ function PoolDashboard() {
     // Load available formats
     const loadFormats = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/formats`);
-        const data = await response.json();
-        if (data.success && data.formats) {
-          setAvailableFormats(data.formats);
-        }
+        setAvailableFormats(await osiaRequest('GET', '/formats'));
       } catch (err) {
         console.error('Failed to load formats:', err);
       }
@@ -216,31 +234,20 @@ function PoolDashboard() {
     try {
       const requestBody = {
         count: parseInt(pregenCount),
-        mode: pregenMode,
+        mode: pregenMode.toUpperCase(),
         scope: pregenScope,
-        options: {
-          length: parseInt(pregenLength),
-          excludeAmbiguous: true
-        }
+        length: parseInt(pregenLength),
+        excludeAmbiguous: true
       };
 
       // Add format association if selected
       if (pregenFormat) {
-        requestBody.format_code = pregenFormat;
+        requestBody.formatCode = pregenFormat;
       }
 
-      const response = await fetch(`${API_BASE_URL}/uin/pre-generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
-      const data = await response.json();
-      if (data.success) {
-        setPregenResult(data.result);
-        fetchStats();
-      } else {
-        setError(data.error || 'Pre-generation failed');
-      }
+      const data = await osiaRequest('POST', '/uin/pre-generate', { body: requestBody });
+      setPregenResult(data);
+      fetchStats();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -390,8 +397,8 @@ function PoolDashboard() {
             >
               <option value="">{t('pool.pregen.noFormat') || 'No format (use default)'}</option>
               {availableFormats.map(fmt => (
-                <option key={fmt.format_code} value={fmt.format_code}>
-                  {fmt.name} ({fmt.format_code})
+                <option key={fmt.code} value={fmt.code}>
+                  {fmt.name} ({fmt.code})
                 </option>
               ))}
             </select>
@@ -409,9 +416,11 @@ function PoolDashboard() {
           <div className="success-banner">
             <span className="success-icon">+</span>
             <div className="success-content">
-              <strong>{pregenResult.inserted?.toLocaleString()} UINs generated successfully</strong>
-              {pregenResult.errors > 0 && <span className="error-note">{pregenResult.errors} errors occurred</span>}
-              {pregenResult.format_id && <span className="format-note"> (Format applied: {pregenFormat})</span>}
+              <strong>{pregenResult.generated?.toLocaleString()} UINs generated successfully</strong>
+              {pregenFormat && <span className="format-note"> (Format applied: {pregenFormat})</span>}
+              {pregenResult.entropy && (
+                <span className="format-note"> · {pregenResult.entropy.hardware ? 'HSM TRNG' : 'CSPRNG'}: {pregenResult.entropy.source}</span>
+              )}
             </div>
           </div>
         )}
@@ -445,10 +454,11 @@ function UinLifecycleOperations({ onStatusChange }) {
 
   const operations = [
     { id: 'fetch', label: 'Fetch', desc: 'Get 1 UIN from pool', method: 'GET', endpoint: '/pool/peek' },
-    { id: 'preassign', label: 'Pre-assign', desc: 'Reserve the UIN', method: 'POST', endpoint: '/pool/preassign' },
-    { id: 'assign', label: 'Assign', desc: 'Assign to entity', method: 'POST', endpoint: '/pool/assign' },
-    { id: 'revoke', label: 'Revoke', desc: 'Revoke UIN', method: 'POST', endpoint: '/pool/revoke' },
-    { id: 'retire', label: 'Retire', desc: 'Retire UIN', method: 'POST', endpoint: '/pool/retire' },
+    { id: 'preassign', label: 'Pre-assign', desc: 'Reserve the UIN', method: 'POST', endpoint: '/uin/claim' },
+    { id: 'assign', label: 'Assign', desc: 'Assign to entity', method: 'POST', endpoint: '/uin/assign' },
+    { id: 'release', label: 'Release', desc: 'Return to pool', method: 'POST', endpoint: '/uin/release' },
+    { id: 'revoke', label: 'Revoke', desc: 'Revoke UIN', method: 'POST', endpoint: '/uin/status' },
+    { id: 'retire', label: 'Retire', desc: 'Retire UIN', method: 'POST', endpoint: '/uin/status' },
   ];
 
   const copyUin = () => {
@@ -474,46 +484,34 @@ function UinLifecycleOperations({ onStatusChange }) {
 
     try {
       if (activeOp === 'fetch') {
-        // Fetch 1 UIN from pool (peek without claiming)
-        const response = await fetch(`${API_BASE_URL}${op.endpoint}?status=AVAILABLE&limit=1`);
-        const data = await response.json();
-        if (data.success && data.uins?.length > 0) {
-          setFetchedUin(data.uins[0]);
-          setResult({ message: 'UIN fetched from pool', uin: data.uins[0].uin });
+        // Peek at one AVAILABLE UIN without claiming it
+        const records = await osiaRequest('GET', op.endpoint, { query: { status: 'AVAILABLE', limit: 1 } });
+        if (records.length > 0) {
+          setFetchedUin(records[0]);
+          setResult({ message: 'UIN fetched from pool', uin: records[0].uin });
         } else {
-          setError(data.error || 'No available UINs in pool');
+          setError('No available UINs in pool');
         }
       } else {
         let body = {};
 
         if (activeOp === 'preassign') {
-          body = { scope: 'foundational' };
+          body = { scope: 'foundational', claimedBy: 'web-ui' };
         } else if (activeOp === 'assign') {
           body = { uin: uinInput, entityId: entityId || `entity-${Date.now()}` };
+        } else if (activeOp === 'release') {
+          body = reason ? { uin: uinInput, reason } : { uin: uinInput };
         } else if (activeOp === 'revoke') {
-          body = { uin: uinInput, reason: reason || 'Manual revocation via UI' };
+          body = { uin: uinInput, status: 'REVOKED', reason: reason || 'Manual revocation via UI' };
         } else if (activeOp === 'retire') {
-          body = { uin: uinInput, reason: reason || 'Manual retirement via UI' };
+          body = { uin: uinInput, status: 'RETIRED', reason: reason || 'Manual retirement via UI' };
         }
 
-        const response = await fetch(`${API_BASE_URL}${op.endpoint}`, {
-          method: op.method,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        const data = await response.json();
-
-        if (data.success) {
-          setResult(data);
-          if (data.uin) {
-            setUinInput(data.uin);
-            // Also update fetchedUin for display
-            setFetchedUin({ uin: data.uin, status: data.status });
-          }
-          if (onStatusChange) onStatusChange();
-        } else {
-          setError(data.error || `${op.label} operation failed`);
-        }
+        const record = await osiaRequest(op.method, op.endpoint, { body });
+        setResult({ uin: record.uin, status: record.status, entityId: record.assignedToRef || undefined });
+        setUinInput(record.uin);
+        setFetchedUin(record);
+        if (onStatusChange) onStatusChange();
       }
     } catch (err) {
       setError(err.message);
@@ -553,7 +551,7 @@ function UinLifecycleOperations({ onStatusChange }) {
             )}
           </div>
           <div className="current-uin-value">
-            <code className="uin-formatted">{fetchedUin.uin_formatted || fetchedUin.uin}</code>
+            <code className="uin-formatted">{fetchedUin.formattedUin || fetchedUin.uin}</code>
             <div className="current-uin-actions">
               <button onClick={copyUin} className="btn-copy" title="Copy raw UIN to clipboard">
                 {copied ? 'Copied!' : 'Copy'}
@@ -563,7 +561,7 @@ function UinLifecycleOperations({ onStatusChange }) {
               </button>
             </div>
           </div>
-          {fetchedUin.uin_formatted && fetchedUin.uin_formatted !== fetchedUin.uin && (
+          {fetchedUin.formattedUin && fetchedUin.formattedUin !== fetchedUin.uin && (
             <div className="current-uin-raw">
               <span className="raw-label">Raw:</span>
               <code className="uin-raw">{fetchedUin.uin}</code>
@@ -572,9 +570,9 @@ function UinLifecycleOperations({ onStatusChange }) {
           {fetchedUin.scope && (
             <div className="current-uin-meta">
               <span>Scope: {fetchedUin.scope}</span>
-              {fetchedUin.provenance && (
-                <span className={`provenance-tag ${fetchedUin.provenance.hardware ? 'hardware' : 'software'}`}>
-                  {fetchedUin.provenance.hardware ? 'HSM TRNG' : 'CSPRNG'}
+              {fetchedUin.entropy && (
+                <span className={`provenance-tag ${fetchedUin.entropy.hardware ? 'hardware' : 'software'}`}>
+                  {fetchedUin.entropy.hardware ? 'HSM TRNG' : 'CSPRNG'}
                 </span>
               )}
             </div>
@@ -596,7 +594,7 @@ function UinLifecycleOperations({ onStatusChange }) {
           </div>
         )}
 
-        {(activeOp === 'assign' || activeOp === 'revoke' || activeOp === 'retire') && (
+        {(activeOp === 'assign' || activeOp === 'release' || activeOp === 'revoke' || activeOp === 'retire') && (
           <div className="form-group">
             <label>UIN</label>
             <input
@@ -608,8 +606,9 @@ function UinLifecycleOperations({ onStatusChange }) {
             />
             <small className="help-text">
               {activeOp === 'assign' ? 'Enter a PREASSIGNED UIN to assign to an entity' :
+               activeOp === 'release' ? 'Enter a PREASSIGNED UIN to return to the pool' :
                activeOp === 'revoke' ? 'Enter an ASSIGNED UIN to revoke' :
-               'Enter a UIN to permanently retire'}
+               'Enter an ASSIGNED UIN to permanently retire'}
             </small>
           </div>
         )}
@@ -628,14 +627,14 @@ function UinLifecycleOperations({ onStatusChange }) {
           </div>
         )}
 
-        {(activeOp === 'revoke' || activeOp === 'retire') && (
+        {(activeOp === 'release' || activeOp === 'revoke' || activeOp === 'retire') && (
           <div className="form-group">
             <label>Reason</label>
             <input
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder={activeOp === 'revoke' ? 'Reason for revocation' : 'Reason for retirement'}
+              placeholder={activeOp === 'revoke' ? 'Reason for revocation' : activeOp === 'release' ? 'Reason for release' : 'Reason for retirement'}
               className="input-text"
             />
             <small className="help-text">Optional reason for audit trail</small>
@@ -956,276 +955,131 @@ pm2 start ecosystem.config.cjs`}</pre>
           {activeSection === 'api' && (
             <article className="doc-article">
               <h1>{t('docs.api.title')}</h1>
+              <p className="lead">
+                OSIA UIN Interface 2.0.0. The OpenAPI specification is <code>api/uin.yaml</code>; the public base URL
+                is <code>https://uin-generator.app/api</code>. Every operation requires the <code>transactionId</code> query
+                parameter and a bearer token (JWT) with the operation's scope; errors are returned as <code>{`{ "code", "message" }`}</code>.
+              </p>
 
-              <h2>{t('docs.api.osiaEndpoint')}</h2>
-              <div className="endpoint-card primary">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/v1/uin</code>
-                </div>
-                <p>{t('docs.api.osiaEndpointDesc')}</p>
+              <h4>{t('docs.api.queryParams')}</h4>
+              <table className="doc-table">
+                <thead><tr><th>{t('docs.api.parameter')}</th><th>{t('docs.api.type')}</th><th>{t('docs.api.required')}</th><th>{t('docs.api.descriptionCol')}</th></tr></thead>
+                <tbody>
+                  <tr><td><code>transactionId</code></td><td>string (1-128)</td><td>{t('common.yes')}</td><td>{t('docs.api.transactionIdDesc')}</td></tr>
+                </tbody>
+              </table>
 
-                <h4>{t('docs.api.queryParams')}</h4>
-                <table className="doc-table">
-                  <thead><tr><th>{t('docs.api.parameter')}</th><th>{t('docs.api.type')}</th><th>{t('docs.api.required')}</th><th>{t('docs.api.descriptionCol')}</th></tr></thead>
-                  <tbody>
-                    <tr><td><code>transactionId</code></td><td>string</td><td>{t('common.yes')}</td><td>{t('docs.api.transactionIdDesc')}</td></tr>
-                  </tbody>
-                </table>
-
-                <h4>{t('docs.api.requestBody')}</h4>
-                <pre className="code-block">{`{
-  "transactionId": "opaque-correlator-abc123",
-  "mode": "foundational"
-}`}</pre>
-                <p><em>Note: the UIN Generator accepts no PII. Person attributes must not be submitted — the service derives a high-entropy identifier with no embedded personal data.</em></p>
-
-                <h4>{t('docs.api.response')}</h4>
-                <pre className="code-block">{`"ABCD1234EFGH5678XYZ"`}</pre>
-
-                <h4>{t('docs.api.errorResponse')}</h4>
-                <pre className="code-block">{`{
+              <h4>{t('docs.api.errorResponse')}</h4>
+              <pre className="code-block">{`HTTP/1.1 400 Bad Request
+{
   "code": 400,
-  "message": "Missing transactionId parameter"
+  "message": "transactionId query parameter is required"
 }`}</pre>
-              </div>
 
               <h2>{t('docs.api.infoEndpoints')}</h2>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/health</code>
-                </div>
-                <p>{t('docs.api.endpoints.health')}</p>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/crypto/status</code>
-                </div>
-                <p>{t('docs.api.endpoints.cryptoStatus')}</p>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/modes</code>
-                </div>
-                <p>{t('docs.api.endpoints.modes')}</p>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/sectors</code>
-                </div>
-                <p>{t('docs.api.endpoints.sectors')}</p>
-              </div>
-
-              <h2>{t('docs.api.poolEndpoints')}</h2>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/pool/stats</code>
-                </div>
-                <p>{t('docs.api.endpoints.poolStats')}</p>
-                <pre className="code-block">{`// Response
-{
-  "success": true,
-  "stats": {
-    "total": 10000,
-    "available": 8500,
-    "preassigned": 500,
-    "assigned": 950,
-    "retired": 45,
-    "revoked": 5
-  }
-}`}</pre>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/pool/peek</code>
-                </div>
-                <p>{t('docs.api.endpoints.poolPeek')}</p>
-                <pre className="code-block">{`// Request: GET /pool/peek?status=AVAILABLE&limit=1
-// Response
-{
-  "success": true,
-  "uins": [
-    { "uin": "ABC123...", "scope": "foundational", "status": "AVAILABLE", "provenance": {...} }
-  ]
-}`}</pre>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/pool/preassign</code>
-                </div>
-                <p>{t('docs.api.endpoints.poolPreassign')}</p>
-                <pre className="code-block">{`// Request
-{ "scope": "foundational" }
-
-// Response
-{
-  "success": true,
-  "uin": "ABCD1234EFGH5678XYZ",
-  "status": "PREASSIGNED",
-  "message": "UIN pre-assigned successfully"
-}`}</pre>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/pool/assign</code>
-                </div>
-                <p>{t('docs.api.endpoints.poolAssign')}</p>
-                <pre className="code-block">{`// Request
-{ "uin": "ABCD1234...", "entityId": "person-123" }
-
-// Response
-{
-  "success": true,
-  "uin": "ABCD1234...",
-  "status": "ASSIGNED",
-  "entityId": "person-123"
-}`}</pre>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/pool/revoke</code>
-                </div>
-                <p>{t('docs.api.endpoints.poolRevoke')}</p>
-                <pre className="code-block">{`// Request
-{ "uin": "ABCD1234...", "reason": "Fraud detected" }`}</pre>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/pool/retire</code>
-                </div>
-                <p>{t('docs.api.endpoints.poolRetire')}</p>
-                <pre className="code-block">{`// Request
-{ "uin": "ABCD1234...", "reason": "Death registration" }`}</pre>
-              </div>
-
-              <h2>{t('docs.api.lifecycleEndpoints')}</h2>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/uin/pre-generate</code>
-                </div>
-                <p>{t('docs.api.endpoints.uinPregenerate')}</p>
-                <pre className="code-block">{`// Request
-{
-  "count": 1000,
-  "mode": "foundational",
-  "scope": "foundational",
-  "options": { "length": 19 }
-}`}</pre>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/uin/claim</code>
-                </div>
-                <p>{t('docs.api.endpoints.uinClaim')}</p>
-                <pre className="code-block">{`// Request
-{ "scope": "health", "client_id": "hospital-a" }
-
-// Response
-{
-  "success": true,
-  "result": {
-    "uin": "ABCD1234EFGH5678XYZ",
-    "status": "PREASSIGNED",
-    "claimed_at": "2025-11-29T12:00:00Z"
-  }
-}`}</pre>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/uin/assign</code>
-                </div>
-                <p>{t('docs.api.endpoints.uinAssign')}</p>
-                <pre className="code-block">{`// Request
-{
-  "uin": "ABCD1234EFGH5678XYZ",
-  "assigned_to_ref": "CR-2025-001234",
-  "actor_system": "civil-registry",
-  "actor_ref": "enrollment-123"
-}`}</pre>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/uin/release</code>
-                </div>
-                <p>{t('docs.api.endpoints.uinRelease')}</p>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/uin/status</code>
-                </div>
-                <p>{t('docs.api.endpoints.uinStatus')}</p>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method post">POST</span>
-                  <code>/uin/cleanup-preassigned</code>
-                </div>
-                <p>{t('docs.api.endpoints.uinCleanup')}</p>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/uin/:uin</code>
-                </div>
-                <p>{t('docs.api.endpoints.uinLookup')}</p>
-              </div>
-
-              <div className="endpoint-card">
-                <div className="endpoint-header">
-                  <span className="method get">GET</span>
-                  <code>/uin/:uin/audit</code>
-                </div>
-                <p>{t('docs.api.endpoints.uinAudit')}</p>
-              </div>
+              <table className="doc-table">
+                <thead><tr><th>Endpoint</th><th>Scope</th><th>{t('docs.api.descriptionCol')}</th></tr></thead>
+                <tbody>
+                  <tr><td><code>GET /v1/health</code></td><td><code>uin.metadata</code></td><td>{t('docs.api.endpoints.health')}</td></tr>
+                  <tr><td><code>GET /v1/crypto/status</code></td><td><code>uin.metadata</code></td><td>{t('docs.api.endpoints.cryptoStatus')}</td></tr>
+                  <tr><td><code>GET /v1/modes</code></td><td><code>uin.metadata</code></td><td>{t('docs.api.endpoints.modes')}</td></tr>
+                  <tr><td><code>GET /v1/sectors</code></td><td><code>uin.metadata</code></td><td>{t('docs.api.endpoints.sectors')}</td></tr>
+                </tbody>
+              </table>
 
               <h2>{t('docs.api.statelessEndpoints')}</h2>
 
-              <div className="endpoint-card">
+              <div className="endpoint-card primary">
                 <div className="endpoint-header">
                   <span className="method post">POST</span>
-                  <code>/generate</code>
+                  <code>/v1/generate</code>
                 </div>
                 <p>{t('docs.api.endpoints.generate')}</p>
-                <pre className="code-block">{`// Request
+                <pre className="code-block">{`POST /v1/generate?transactionId=7f3c2a10-enrol-0001
+Authorization: Bearer <JWT with scope uin.generate>
+
 {
-  "mode": "foundational",
+  "mode": "FOUNDATIONAL",
   "length": 19,
-  "charset": "A-Z0-9",
-  "checksum": { "enabled": true, "algorithm": "iso7064" }
+  "charset": "ALPHANUMERIC",
+  "excludeAmbiguous": true,
+  "checksum": "ISO7064_MOD37_2",
+  "formatting": { "enabled": true, "separator": "-", "groupSize": 4 },
+  "lifecycle": { "issuer": "https://registry.example.gov", "infiniteLifetime": true },
+  "outputFormat": "JSON"
+}
+
+// 200
+{
+  "uin": "K7M2QX9P4RTA8WZC3HN",
+  "formattedUin": "K7M2-QX9P-4RTA-8WZC-3HN",
+  "mode": "FOUNDATIONAL",
+  "checksum": "ISO7064_MOD37_2",
+  "integrityHash": "<RIPEMD-160(SHA3-256(uin))>",
+  "issuedAt": "2026-11-25T12:00:00.000Z",
+  "issuer": "https://registry.example.gov",
+  "expiresAt": null,
+  "infiniteLifetime": true,
+  "entropy": { "hardware": true, "source": "Utimaco CryptoServer Hardware TRNG (c3)", "fipsLevel": 3 }
 }`}</pre>
+                <p>
+                  Modes: <code>FOUNDATIONAL</code>, <code>RANDOM</code>, <code>STRUCTURED</code> (pattern with non-personal
+                  attributes such as <code>regionCode</code>), <code>SECTOR</code> (<code>sector</code> + <code>baseUIN</code>,
+                  deterministic HMAC-SHA256). Checksums: <code>NONE</code>, <code>ISO7064_MOD37_2</code>,{' '}
+                  <code>ISO7064_MOD97_10</code>, <code>LUHN</code>, <code>DAMM</code>. Output: <code>JSON</code>,{' '}
+                  <code>JWT</code>, <code>JSON_LD</code>.
+                </p>
               </div>
+
+              <table className="doc-table">
+                <thead><tr><th>Endpoint</th><th>Scope</th><th>{t('docs.api.descriptionCol')}</th></tr></thead>
+                <tbody>
+                  <tr><td><code>POST /v1/batch</code></td><td><code>uin.generate</code></td><td>{'{ "count": 1-1000, "options": GenerateRequest }'}</td></tr>
+                  <tr><td><code>POST /v1/uin</code></td><td><code>uin.generate</code></td><td>{t('docs.api.osiaEndpointDesc')} Attributes are accepted for OSIA 1.2 compatibility but are not used, stored or logged.</td></tr>
+                  <tr><td><code>POST /v1/validate</code></td><td><code>uin.use</code></td><td>Syntax, length, charset, checksum and optional registry status (<code>checkRegistry</code>)</td></tr>
+                  <tr><td><code>GET /v1/uin/{'{uin}'}</code></td><td><code>uin.use</code></td><td>{t('docs.api.endpoints.uinLookup')}</td></tr>
+                  <tr><td><code>GET /v1/uin/{'{uin}'}/audit</code></td><td><code>uin.use</code></td><td>{t('docs.api.endpoints.uinAudit')}</td></tr>
+                </tbody>
+              </table>
+
+              <h2>{t('docs.api.poolEndpoints')}</h2>
+              <table className="doc-table">
+                <thead><tr><th>Endpoint</th><th>Transition</th><th>{t('docs.api.descriptionCol')}</th></tr></thead>
+                <tbody>
+                  <tr><td><code>GET /v1/pool/stats</code></td><td>-</td><td>{t('docs.api.endpoints.poolStats')}</td></tr>
+                  <tr><td><code>GET /v1/pool/peek</code></td><td>-</td><td>{t('docs.api.endpoints.poolPeek')}</td></tr>
+                  <tr><td><code>POST /v1/uin/pre-generate</code></td><td>→ AVAILABLE</td><td>{t('docs.api.endpoints.uinPregenerate')}</td></tr>
+                  <tr><td><code>POST /v1/uin/claim</code></td><td>AVAILABLE → PREASSIGNED</td><td>{t('docs.api.endpoints.uinClaim')}</td></tr>
+                  <tr><td><code>POST /v1/uin/assign</code></td><td>PREASSIGNED → ASSIGNED</td><td>{t('docs.api.endpoints.uinAssign')}</td></tr>
+                  <tr><td><code>POST /v1/uin/release</code></td><td>PREASSIGNED → AVAILABLE</td><td>{t('docs.api.endpoints.uinRelease')}</td></tr>
+                  <tr><td><code>POST /v1/uin/status</code></td><td>ASSIGNED → RETIRED | REVOKED</td><td>{t('docs.api.endpoints.uinStatus')}</td></tr>
+                  <tr><td><code>POST /v1/uin/cleanup-preassigned</code></td><td>PREASSIGNED → AVAILABLE</td><td>{t('docs.api.endpoints.uinCleanup')}</td></tr>
+                </tbody>
+              </table>
+              <p>All pool operations require the <code>uin.pool</code> scope.</p>
+              <pre className="code-block">{`POST /v1/uin/claim?transactionId=birth-2026-000123
+{ "scope": "foundational", "claimedBy": "civil-registry", "ttlSeconds": 900 }
+
+// 200 UinRecord
+{
+  "uin": "K7M2QX9P4RTA8WZC3HN",
+  "formattedUin": "K7M2Q.X9P4.RTA8.WZC3.HN",
+  "status": "PREASSIGNED",
+  "mode": "FOUNDATIONAL",
+  "scope": "foundational",
+  "formatCode": "OSIA_STANDARD",
+  "claimedBy": "civil-registry",
+  "assignedToRef": null,
+  "reason": null,
+  "createdAt": "2026-11-20T08:00:00.000Z",
+  "updatedAt": "2026-11-25T12:00:00.000Z"
+}
+
+POST /v1/uin/assign?transactionId=birth-2026-000123
+{ "uin": "K7M2QX9P4RTA8WZC3HN", "entityId": "PERSON-12345" }
+
+POST /v1/uin/status?transactionId=death-2071-000456
+{ "uin": "K7M2QX9P4RTA8WZC3HN", "status": "RETIRED", "reason": "Death registration" }`}</pre>
             </article>
           )}
 
@@ -1258,13 +1112,11 @@ pm2 start ecosystem.config.cjs`}</pre>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><td><code>format_code</code></td><td>{t('docs.formats.fields.formatCode')}</td></tr>
+                  <tr><td><code>code</code></td><td>{t('docs.formats.fields.formatCode')}</td></tr>
                   <tr><td><code>separator</code></td><td>{t('docs.formats.fields.separator')}</td></tr>
-                  <tr><td><code>segment_lengths</code></td><td>{t('docs.formats.fields.segmentLengths')}</td></tr>
-                  <tr><td><code>display_case</code></td><td>{t('docs.formats.fields.displayCase')}</td></tr>
+                  <tr><td><code>groupSize / segmentLengths</code></td><td>{t('docs.formats.fields.segmentLengths')}</td></tr>
                   <tr><td><code>prefix</code></td><td>{t('docs.formats.fields.prefix')}</td></tr>
                   <tr><td><code>suffix</code></td><td>{t('docs.formats.fields.suffix')}</td></tr>
-                  <tr><td><code>applies_to_scope / applies_to_mode</code></td><td>{t('docs.formats.fields.appliesTo')}</td></tr>
                 </tbody>
               </table>
 
@@ -1283,56 +1135,26 @@ pm2 start ecosystem.config.cjs`}</pre>
               <h2>{t('docs.formats.apiUsage')}</h2>
 
               <h3>{t('docs.formats.listFormats')}</h3>
-              <pre className="code-block">{`GET /formats
+              <pre className="code-block">{`GET /v1/formats?transactionId=...
 
-Response:
-{
-  "success": true,
-  "formats": [
-    {
-      "id": 1,
-      "format_code": "OSIA_STANDARD",
-      "name": "OSIA Standard Format",
-      "separator": ".",
-      "segment_lengths": [5, 4, 4, 4, 2],
-      "total_length": 19,
-      "is_default": true
-    }
-  ]
-}`}</pre>
+// 200
+[
+  {
+    "code": "OSIA_STANDARD",
+    "name": "OSIA Standard Format",
+    "separator": ".",
+    "groupSize": 5,
+    "segmentLengths": [5, 4, 4, 4, 2],
+    "description": "Standard 19-character UIN with dot separators: XXXXX.XXXX.XXXX.XXXX.XX"
+  }
+]`}</pre>
 
               <h3>{t('docs.formats.previewFormat')}</h3>
-              <pre className="code-block">{`POST /formats/preview
-Content-Type: application/json
+              <pre className="code-block">{`POST /v1/generate?transactionId=...
+{ "mode": "FOUNDATIONAL", "formatting": { "formatCode": "OSIA_STANDARD" } }
 
-{
-  "uin": "ABCDEFGHIJKLMNOPQRS",
-  "format_code": "OSIA_STANDARD"
-}
-
-Response:
-{
-  "success": true,
-  "raw": "ABCDEFGHIJKLMNOPQRS",
-  "formatted": "ABCDE.FGHI.JKLM.NOPQ.RS"
-}`}</pre>
-
-              <h3>{t('docs.formats.setOverride')}</h3>
-              <pre className="code-block">{`POST /uin/{uin}/format
-Content-Type: application/json
-
-{
-  "format_id": 3
-}
-
-Response:
-{
-  "success": true,
-  "override": {
-    "uin": "ABCDEFGHIJKLMNOPQRS",
-    "format_id": 3
-  }
-}`}</pre>
+// 200 (excerpt)
+{ "uin": "ABCDEFGHIJKLMNOPQRS", "formattedUin": "ABCDE.FGHI.JKLM.NOPQ.RS", ... }`}</pre>
 
               <h2>{t('docs.api.formatEndpoints')}</h2>
               <table className="doc-table">
@@ -1343,14 +1165,11 @@ Response:
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><td><code>GET /formats</code></td><td>{t('docs.api.endpoints.formatsList')}</td></tr>
-                  <tr><td><code>GET /formats/:id</code></td><td>{t('docs.api.endpoints.formatsGet')}</td></tr>
-                  <tr><td><code>POST /formats</code></td><td>{t('docs.api.endpoints.formatsCreate')}</td></tr>
-                  <tr><td><code>PUT /formats/:id</code></td><td>{t('docs.api.endpoints.formatsUpdate')}</td></tr>
-                  <tr><td><code>DELETE /formats/:id</code></td><td>{t('docs.api.endpoints.formatsDelete')}</td></tr>
-                  <tr><td><code>POST /formats/preview</code></td><td>{t('docs.api.endpoints.formatsPreview')}</td></tr>
-                  <tr><td><code>POST /uin/:uin/format</code></td><td>{t('docs.api.endpoints.uinFormatSet')}</td></tr>
-                  <tr><td><code>DELETE /uin/:uin/format</code></td><td>{t('docs.api.endpoints.uinFormatRemove')}</td></tr>
+                  <tr><td><code>GET /v1/formats</code></td><td>{t('docs.api.endpoints.formatsList')}</td></tr>
+                  <tr><td><code>GET /v1/formats/{'{code}'}</code></td><td>{t('docs.api.endpoints.formatsGet')}</td></tr>
+                  <tr><td><code>POST /v1/formats</code></td><td>{t('docs.api.endpoints.formatsCreate')} (201, scope <code>uin.formats</code>)</td></tr>
+                  <tr><td><code>PUT /v1/formats/{'{code}'}</code></td><td>{t('docs.api.endpoints.formatsUpdate')} (scope <code>uin.formats</code>)</td></tr>
+                  <tr><td><code>DELETE /v1/formats/{'{code}'}</code></td><td>{t('docs.api.endpoints.formatsDelete')} (204, scope <code>uin.formats</code>)</td></tr>
                 </tbody>
               </table>
             </article>
@@ -1427,26 +1246,26 @@ Response:
 
     Note over CR,DB: Birth Registration Flow
 
-    CR->>API: POST /uin/claim {scope: foundational}
+    CR->>API: POST /v1/uin/claim?transactionId=T1 {scope: foundational}
     API->>DB: SELECT ... FOR UPDATE SKIP LOCKED
     DB-->>API: UIN row (status: AVAILABLE)
     API->>DB: UPDATE status = PREASSIGNED
-    API->>DB: INSERT audit (PREASSIGNED)
-    API-->>CR: {uin: ABC123, status: PREASSIGNED}
+    API->>DB: INSERT audit (CLAIMED, T1)
+    API-->>CR: UinRecord {uin: ABC123, status: PREASSIGNED}
 
-    Note over CR: Collect person data
+    Note over CR: Registry enrolment (outside the UIN Generator)
 
-    CR->>API: POST /uin/assign {uin, assigned_to_ref}
+    CR->>API: POST /v1/uin/assign?transactionId=T1 {uin, entityId}
     API->>DB: UPDATE status = ASSIGNED
-    API->>DB: INSERT audit (ASSIGNED)
-    API-->>CR: {success: true}
+    API->>DB: INSERT audit (ASSIGNED, T1)
+    API-->>CR: UinRecord {status: ASSIGNED}
 
     Note over CR,DB: Death Registration Flow
 
-    CR->>API: POST /uin/status {uin, new_status: RETIRED}
+    CR->>API: POST /v1/uin/status?transactionId=T2 {uin, status: RETIRED}
     API->>DB: UPDATE status = RETIRED
-    API->>DB: INSERT audit (RETIRED)
-    API-->>CR: {success: true}`}
+    API->>DB: INSERT audit (RETIRED, T2)
+    API-->>CR: UinRecord {status: RETIRED}`}
               />
 
               <h2>{t('docs.lifecycle.workflow.sectorTitle')}</h2>
@@ -1459,11 +1278,11 @@ Response:
 
     Note over HS,HMAC: Derive Health Sector Token
 
-    HS->>API: POST /generate {mode: sector_token}
-    API->>HMAC: HMAC(secret_health, UIN + salt)
+    HS->>API: POST /v1/generate {mode: SECTOR, sector: health, baseUIN}
+    API->>HMAC: HMAC(key_health, sector || UIN || counter)
     HMAC-->>API: Derived token bytes
-    API->>API: Encode to charset
-    API-->>HS: {token: HLTH-XXX-YYY-ZZZ}
+    API->>API: Map to charset, append check character
+    API-->>HS: {uin: <health token>, sector: health}
 
     Note over HS,HMAC: Token is unlinkable to foundational UIN`}
               />
@@ -2138,12 +1957,6 @@ function UinLookup() {
             )}
           </div>
 
-          {uinData.attributes && Object.keys(uinData.attributes).length > 0 && (
-            <div className="attributes-section">
-              <h4>Attributes</h4>
-              <pre className="attributes-json">{JSON.stringify(uinData.attributes, null, 2)}</pre>
-            </div>
-          )}
         </div>
       )}
 
