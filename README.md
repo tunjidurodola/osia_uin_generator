@@ -163,7 +163,7 @@ cd web && npm install && cd ..
 # Configure environment (copy and edit)
 cp .env.example .env
 
-# Run database migrations
+# Run database migrations (applies migrations/NNN_*.sql in order, tracked in schema_migrations)
 npm run migrate
 
 # Start the API server
@@ -176,16 +176,26 @@ pm2 start ecosystem.config.cjs
 ### Verify Installation
 
 ```bash
-# Health check
-curl http://localhost:19020/health
+# Health check (OSIA interface; OSIA_AUTH_MODE=optional for a local demo)
+curl "http://localhost:19020/v1/health?transactionId=install-check"
 
 # Check cryptographic services status
-curl http://localhost:19020/crypto/status
+curl "http://localhost:19020/v1/crypto/status?transactionId=install-check"
 
 # Generate a UIN (stateless)
-curl -X POST http://localhost:19020/generate \
+curl -X POST "http://localhost:19020/v1/generate?transactionId=install-check" \
   -H "Content-Type: application/json" \
-  -d '{"mode": "foundational"}'
+  -d '{"mode": "FOUNDATIONAL"}'
+```
+
+### Tests
+
+```bash
+npm test            # unit tests (legacy engine + OSIA v2 engine)
+npm run test:db     # pool service integration tests (needs DB_*)
+npm run test:api    # OSIA /v1 contract tests; every response is checked against api/uin.yaml
+                    # (set OSIA_TEST_REQUIRE_DB=1 to fail instead of skipping DB-backed cases)
+npm run lint:api    # Redocly lint of api/uin.yaml
 ```
 
 ---
@@ -363,97 +373,117 @@ GET /crypto/status
 
 ## API Reference
 
-### Information Endpoints
+### OSIA UIN Interface 2.0.0 (`/v1`)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | API information and available endpoints |
-| `GET` | `/health` | Health check with HSM/Vault status |
-| `GET` | `/crypto/status` | Cryptographic services status |
-| `GET` | `/modes` | List available generation modes |
-| `GET` | `/sectors` | List supported sectors |
+The OpenAPI specification is [`api/uin.yaml`](api/uin.yaml). The server validates every
+`/v1` request against that file (parameters and bodies, `additionalProperties: false`),
+so the specification and the implementation cannot drift apart. Behind the public
+reverse proxy the base URL is `https://uin-generator.app/api`.
 
-### OSIA-Compliant Endpoint
+Every operation:
 
-#### `POST /v1/uin`
+- requires the `transactionId` query parameter (1-128 characters, no control characters);
+  it is recorded in the audit trail of every pool operation;
+- requires a bearer JWT carrying the operation's scope (see [Authentication](#authentication));
+- returns errors as `{ "code": <http status>, "message": "..." }` and nothing else.
 
-Generate a new UIN following the OSIA v1.2.0 endpoint pattern.
+| Method | Endpoint | Scope | Success | Description |
+|--------|----------|-------|---------|-------------|
+| `GET` | `/v1/health` | `uin.metadata` | 200 | Service, HSM and Vault health |
+| `GET` | `/v1/crypto/status` | `uin.metadata` | 200 | Entropy source (HSM TRNG or CSPRNG), FIPS level, Vault state |
+| `GET` | `/v1/modes` | `uin.metadata` | 200 | `FOUNDATIONAL`, `RANDOM`, `STRUCTURED`, `SECTOR` |
+| `GET` | `/v1/sectors` | `uin.metadata` | 200 | Sectors available for token derivation |
+| `POST` | `/v1/uin` | `uin.generate` | 200 | OSIA 1.2 `generateUIN`; returns the UIN as a JSON string |
+| `POST` | `/v1/generate` | `uin.generate` | 200 | Stateless generation (all modes, charsets, checksums, formatting, lifecycle claims, JSON/JWT/JSON-LD) |
+| `POST` | `/v1/batch` | `uin.generate` | 200 | 1-1000 identifiers in one call |
+| `POST` | `/v1/validate` | `uin.use` | 200 | Syntax, length, charset, checksum and optional registry status |
+| `GET` | `/v1/uin/{uin}` | `uin.use` | 200 | Pool record (status, display format, entropy provenance) |
+| `GET` | `/v1/uin/{uin}/audit` | `uin.use` | 200 | Append-only lifecycle audit trail |
+| `GET` | `/v1/pool/stats` | `uin.pool` | 200 | Counts by status, optional `scope` |
+| `GET` | `/v1/pool/peek` | `uin.pool` | 200 | Read-only preview (`status`, `scope`, `limit` 1-100) |
+| `POST` | `/v1/uin/pre-generate` | `uin.pool` | 200 | Pre-generate up to 10 000 UINs into the pool |
+| `POST` | `/v1/uin/claim` | `uin.pool` | 200 | AVAILABLE → PREASSIGNED (row-locked, optional `ttlSeconds`) |
+| `POST` | `/v1/uin/assign` | `uin.pool` | 200 | PREASSIGNED → ASSIGNED (`entityId` is a non-personal surrogate key) |
+| `POST` | `/v1/uin/release` | `uin.pool` | 200 | PREASSIGNED → AVAILABLE |
+| `POST` | `/v1/uin/status` | `uin.pool` | 200 | ASSIGNED → RETIRED or REVOKED |
+| `POST` | `/v1/uin/cleanup-preassigned` | `uin.pool` | 200 | Release reservations whose TTL (or `olderThanSeconds`) has elapsed |
+| `GET` | `/v1/formats` | `uin.metadata` | 200 | Display format configurations |
+| `POST` | `/v1/formats` | `uin.formats` | 201 | Create a format |
+| `GET` | `/v1/formats/{code}` | `uin.metadata` | 200 | Read a format |
+| `PUT` | `/v1/formats/{code}` | `uin.formats` | 200 | Update a format |
+| `DELETE` | `/v1/formats/{code}` | `uin.formats` | 204 | Delete a format (not the default, not one in use) |
 
-**Query Parameters:**
+Generation operations return `503` when `HSM_REQUIRE_HARDWARE=true` and no hardware TRNG
+is reachable. An invalid UIN submitted to `/v1/validate` is a normal `200` result with
+`"valid": false`; `400` is reserved for malformed requests.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `transactionId` | string | Yes | Transaction identifier for tracking |
-
-**Response (200 OK):**
-
-```
-"ABCD1234EFGH5678XYZ"
-```
-
-### Stateless Generation Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/generate` | Generate UIN without database persistence |
-| `POST` | `/validate` | Validate a UIN (checksum, format) |
-| `POST` | `/batch` | Generate multiple UINs in one request |
-
-### Pool Management Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/pool/stats` | Get pool statistics by scope |
-| `GET` | `/pool/peek` | Preview top available UINs without claiming |
-| `POST` | `/pool/preassign` | Pre-assign a UIN (UI-friendly, AVAILABLE → PREASSIGNED) |
-| `POST` | `/pool/assign` | Assign a pre-assigned UIN (UI-friendly, PREASSIGNED → ASSIGNED) |
-| `POST` | `/pool/revoke` | Revoke a UIN (UI-friendly, → REVOKED) |
-| `POST` | `/pool/retire` | Retire a UIN (UI-friendly, → RETIRED) |
-
-### UIN Lifecycle Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/uin/pre-generate` | Batch pre-generate UINs into pool |
-| `POST` | `/uin/claim` | Claim available UIN (AVAILABLE → PREASSIGNED) |
-| `POST` | `/uin/assign` | Assign UIN to entity (PREASSIGNED → ASSIGNED) |
-| `POST` | `/uin/release` | Release UIN back to pool (PREASSIGNED → AVAILABLE) |
-| `POST` | `/uin/status` | Update UIN status (retire, revoke, etc.) |
-| `POST` | `/uin/cleanup-preassigned` | Release stale pre-assigned UINs |
-| `GET` | `/uin/:uin` | Lookup UIN details |
-| `GET` | `/uin/:uin/audit` | Get complete audit trail |
-
-### Format Configuration Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/formats` | List all format configurations |
-| `GET` | `/formats/:code` | Get format by code |
-| `POST` | `/formats` | Create new format configuration |
-| `PUT` | `/formats/:code` | Update format configuration |
-| `DELETE` | `/formats/:code` | Delete format configuration |
-
-### Example: Pool Lifecycle Testing
+#### Examples
 
 ```bash
-# 1. Fetch a UIN from the pool (peek without claiming)
-curl "http://localhost:19020/pool/peek?status=AVAILABLE&limit=1"
+BASE=https://uin-generator.app/api
+TXN=$(uuidgen)
 
-# 2. Pre-assign a UIN (reserves it)
-curl -X POST http://localhost:19020/pool/preassign \
-  -H "Content-Type: application/json" \
-  -d '{"scope": "foundational"}'
+# FOUNDATIONAL UIN with display formatting and a signed JWT representation
+curl -s -X POST "$BASE/v1/generate?transactionId=$TXN" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"mode":"FOUNDATIONAL","excludeAmbiguous":true,
+       "formatting":{"enabled":true,"separator":"-","groupSize":4},
+       "outputFormat":"JWT"}'
 
-# 3. Assign the UIN to an entity
-curl -X POST http://localhost:19020/pool/assign \
-  -H "Content-Type: application/json" \
-  -d '{"uin": "ABCD1234...", "entityId": "person-123"}'
+# Deterministic, unlinkable health-sector token (the base UIN is never logged or returned)
+curl -s -X POST "$BASE/v1/generate?transactionId=$TXN" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"mode":"SECTOR","sector":"health","baseUIN":"K7M2QX9P4RTA8WZC3HN"}'
 
-# 4. Retire or revoke the UIN
-curl -X POST http://localhost:19020/pool/retire \
-  -H "Content-Type: application/json" \
-  -d '{"uin": "ABCD1234...", "reason": "Death registration"}'
+# Pool lifecycle
+curl -s -X POST "$BASE/v1/uin/claim?transactionId=$TXN" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"scope":"foundational","claimedBy":"civil-registry","ttlSeconds":900}'
+curl -s -X POST "$BASE/v1/uin/assign?transactionId=$TXN" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"uin":"<uin>","entityId":"PERSON-12345"}'
+curl -s -X POST "$BASE/v1/uin/status?transactionId=$TXN" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"uin":"<uin>","status":"RETIRED","reason":"Death registration"}'
+curl -s "$BASE/v1/uin/<uin>/audit?transactionId=$TXN" -H "Authorization: Bearer $TOKEN"
 ```
+
+### Authentication
+
+`/v1` uses OSIA `BearerAuth` (JWT). Scopes are read from the `scope` claim
+(space-delimited) or `scp` (array or string).
+
+| Variable | Description |
+|----------|-------------|
+| `OSIA_AUTH_MODE` | `required` (default): every call needs a valid token with the operation's scope. `optional`: public-demo mode; calls without a token are accepted, a presented token is still fully verified and its scopes enforced |
+| `OSIA_JWT_JWKS_URL` | Remote JWKS of the identity provider (RS256, PS256, ES256, ES384, EdDSA) |
+| `OSIA_JWT_PUBLIC_KEY` | Alternatively, a single SPKI PEM public key |
+| `OSIA_JWT_SECRET` | Alternatively, an HS256 shared secret (at least 32 bytes) |
+| `OSIA_JWT_ISSUER` / `OSIA_JWT_AUDIENCE` | Required `iss` / `aud` values |
+
+Failures return `401` (missing or invalid token) or `403` (missing scope) with an
+RFC 6750 `WWW-Authenticate` challenge.
+
+### Output representations
+
+| `outputFormat` | Result |
+|----------------|--------|
+| `JSON` (default) | Plain `GenerateResponse` |
+| `JWT` | Adds `jwt`: claims `iss`, `sub` (= UIN), `aud`, `iat`, `nbf`, `exp`, `jti`, `uin`, `mode`, `sector`, `txn`; signed with `OSIA_SIGNING_KEY` (PKCS#8 PEM, P-256 → ES256 or Ed25519 → EdDSA). The public key is carried in the `jwk` header. Without a configured key an ephemeral ES256 key is used for the life of the process |
+| `JSON_LD` | Adds `jsonLd`: a W3C Verifiable Credentials Data Model 2.0 document (unsecured) |
+
+### Legacy endpoints
+
+The original routes are kept for the web UI and existing integrations. They are not part
+of the OSIA interface and do not use the OSIA error envelope.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/`, `/health`, `/crypto/status`, `/modes`, `/sectors` | Service information |
+| `POST` | `/generate`, `/validate`, `/batch` | Stateless generation and validation (lower-case mode names, `checksum: { enabled, algorithm }`) |
+| `POST` | `/hash/uin`, `/hash/uin/verify` | RIPEMD-160(SHA3-256(UIN + salt)) |
+| `GET` | `/pool/stats`, `/pool/peek` | Pool statistics and preview |
+| `POST` | `/pool/preassign`, `/pool/assign`, `/pool/revoke`, `/pool/retire` | Pool transitions |
+| `POST` | `/uin/pre-generate` | Pre-generation |
+| `GET` | `/uin/:uin`, `/uin/:uin/audit` | Raw pool record and audit rows |
+| `GET` `POST` `PUT` `DELETE` | `/formats`, `/formats/:id`, `/formats/preview` | Format administration |
 
 ---
 
@@ -487,37 +517,59 @@ stateDiagram-v2
 
 ## Generation Modes
 
-### 1. Foundational Mode (Default)
+### 1. FOUNDATIONAL (default)
 
-High-entropy, lifelong identifier with no embedded PII. Uses HSM hardware TRNG when available.
+High-entropy, lifelong identifier with no embedded personal data. Characters are drawn by
+rejection sampling (no modulo bias) from bytes supplied by the HSM priority chain.
 
 ```json
 {
-  "mode": "foundational",
+  "mode": "FOUNDATIONAL",
   "length": 19,
-  "charset": "A-Z0-9",
-  "checksum": { "enabled": true, "algorithm": "iso7064" }
+  "charset": "ALPHANUMERIC",
+  "excludeAmbiguous": true,
+  "checksum": "ISO7064_MOD37_2"
 }
 ```
 
-### 2. Random Mode
+`length` is the canonical length including check characters. Charsets: `ALPHANUMERIC`,
+`NUMERIC`, `ALPHABETIC`, `HEXADECIMAL`. Checksums: `NONE`, `ISO7064` / `ISO7064_MOD37_2`,
+`ISO7064_MOD97_10`, `LUHN`, `DAMM` (Luhn and Damm require `NUMERIC`).
 
-Fully configurable random identifiers with hardware entropy.
+### 2. RANDOM
 
-### 3. Structured Mode
+Same engine and parameters as FOUNDATIONAL, for identifiers that are not lifelong.
 
-Template-based generation with embedded values.
+### 3. STRUCTURED
 
-### 4. Sector Token Mode
+A pattern of literals and named groups. `random…` groups are filled with random characters,
+a `checksum` group receives the check character(s) computed over the preceding groups, and
+any other group embeds the attribute of the same name. Only non-personal administrative
+attributes may be embedded (default allow-list: `regionCode`, `districtCode`, `officeCode`,
+`issuerCode`, `registryCode`, `sectorCode`, `countryCode`, `registrationYear`, `batchCode`;
+override with `UIN_STRUCTURED_ATTRIBUTES`). Patterns are evaluated in an isolated context
+with a time limit.
 
-Cryptographically derived, unlinkable sector-specific tokens.
+```json
+{
+  "mode": "STRUCTURED",
+  "pattern": "(?<regionCode>[A-Z]{2})-(?<registrationYear>[0-9]{4})-(?<random>[0-9]{6})-(?<checksum>[0-9]{1})",
+  "attributes": { "regionCode": "NW", "registrationYear": "2026" }
+}
+```
+
+### 4. SECTOR
+
+Deterministic, unlinkable sector-specific tokens: the same base UIN and sector always give
+the same token, different sectors give unrelated tokens, and the base UIN cannot be
+recovered without the sector key.
 
 ```mermaid
 flowchart LR
-    UIN[Foundational UIN] --> HMAC[HMAC-SHA256]
-    SECRET[Sector Secret<br/>from Vault] --> HMAC
-    SALT[Random Salt<br/>from HSM TRNG] --> HMAC
-    HMAC --> TOKEN[Sector Token]
+    UIN[Foundational UIN] --> HMAC[HMAC-SHA256<br/>counter mode]
+    SECRET[Sector key<br/>from Vault] --> HMAC
+    HMAC --> MAP[Rejection-sampled<br/>charset mapping]
+    MAP --> TOKEN[Sector token + check character]
 ```
 
 ---
@@ -556,11 +608,25 @@ HOST=0.0.0.0
 NODE_ENV=production
 
 # Database (PostgreSQL)
-OSIA_DB_HOST=localhost
-OSIA_DB_PORT=5432
-OSIA_DB_USER=osia_user
-OSIA_DB_PASSWORD=secure_password
-OSIA_DB_NAME=osia_prod
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=osia_user
+DB_PASSWORD=secure_password
+DB_NAME=osia_prod
+PGSSLMODE=require            # managed PostgreSQL; NODE_EXTRA_CA_CERTS verifies the chain
+
+# OSIA interface (see API Reference > Authentication)
+OSIA_AUTH_MODE=required
+OSIA_JWT_JWKS_URL=https://idp.example.gov/.well-known/jwks.json
+OSIA_JWT_ISSUER=https://idp.example.gov
+OSIA_ISSUER=https://registry.example.gov   # default iss of JWT / JSON-LD outputs
+OSIA_SIGNING_KEY=<PKCS#8 PEM>              # signs JWT outputs
+HSM_REQUIRE_HARDWARE=true                  # refuse to issue from software entropy
+
+# Rate limiting (requests per minute per client)
+UIN_RATE_LIMIT_MAX=100
+UIN_GENERATE_RATE_LIMIT_MAX=30
+UIN_TRUST_PROXY=loopback                   # client address from X-Forwarded-For set by the local proxy
 
 # HashiCorp Vault
 VAULT_ENABLED=true
@@ -705,20 +771,23 @@ npm run dev    # Development server
 npm test
 ```
 
-### Integration Tests
+### Integration and Contract Tests
 
 ```bash
-npm run test:db
+npm run test:db     # pool service against PostgreSQL
+npm run test:api    # OSIA /v1 contract tests (responses validated against api/uin.yaml)
+npm run lint:api    # Redocly lint of the specification
 ```
 
 ### Health Check
 
 ```bash
-curl http://localhost:19020/health
+curl "http://localhost:19020/v1/health?transactionId=health-check"
 
 # Response includes HSM/Vault status
 {
   "status": "healthy",
+  "version": "2.0.0",
   "crypto": {
     "hsm": { "enabled": true, "hasTrng": true },
     "vault": { "enabled": true, "authenticated": true }
