@@ -9,6 +9,16 @@ A production-grade, PostgreSQL-backed **Unique Identification Number (UIN)** gen
 
 ---
 
+## Principle: no PII
+
+The OSIA UIN Generator deals exclusively in UINs, sector tokens, and opaque transaction correlators. It does **not** accept, store, log, derive from, or display Personally Identifiable Information — no names, dates of birth, document numbers, nationality, gender, biometrics, or MRZ personal fields. This is a hard invariant, not a preference; the tool's OSIA positioning depends on it. PII-accepting modes (MRZ / passport / TD1-TD3) were present in earlier versions and have been removed — MRZ generation belongs in downstream services that are authorised to handle PII.
+
+## Principle: hardware-rooted randomness (fail-loud)
+
+HSM integration is legitimacy-critical. The priority chain is Utimaco CryptoServer c3 (FIPS 140-2 Level 3) → YubiHSM 2 (FIPS 140-2 Level 2) → Node CSPRNG. Set `HSM_REQUIRE_HARDWARE=true` to refuse any request that cannot be served from hardware entropy; fallbacks are always logged loudly, never silent. `/crypto/status` surfaces the last-used source so reviewers can verify the chain is live.
+
+---
+
 ## Table of Contents
 
 - [Features](#features)

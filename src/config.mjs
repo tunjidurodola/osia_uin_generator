@@ -168,7 +168,7 @@ export function loadConfig() {
 
     // Database
     db: {
-      host: process.env.DB_HOST || '172.27.104.111',
+      host: process.env.DB_HOST || 'db.pocket.one',
       port: parseInt(process.env.DB_PORT || '5432'),
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || '',

@@ -8,9 +8,10 @@
 import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { generateUin, validateUin, COUNTRY_CODES, DOCUMENT_TYPES } from './uinGenerator.mjs';
+import { generateUin, validateUin, provideRandomBytes } from './uinGenerator.mjs';
+import { randomBytesWithSource as cryptoRandomBytesWithSource } from './cryptoService.mjs';
 import { getConfig } from './config.mjs';
-import { computeHash, computeKeyedHash, verifyHash, hashMultiple } from './hash.mjs';
+import { computeUinHash, computeSha256, computeSha3_256, verifyUinHash } from './hash.mjs';
 import { preGenerateUins, claimUin, assignUin, updateUinStatus, getUin, getUinAudit, getPoolStats } from './poolService.mjs';
 import { getFormats, getFormat, createFormat, updateFormat, deleteFormat, applyFormat, previewFormat } from './formatService.mjs';
 import { initializeCryptoService, getStatus as getCryptoStatus, loadSecretsFromEnv } from './cryptoService.mjs';
@@ -27,6 +28,32 @@ function sanitizeForLog(str) {
   if (typeof str !== 'string') return '';
   // eslint-disable-next-line no-control-regex
   return str.replace(/[\x00-\x1f\x7f]/g, '');
+}
+
+/**
+ * Send a sanitized error response.
+ * For 4xx (client errors) we keep the caller-supplied message — callers are
+ * expected to pass validation messages safe for clients. For 5xx we return
+ * only a correlation id; the full error is logged server-side. This prevents
+ * DB constraint names, file paths, and Vault errors from leaking to clients.
+ */
+function sendError(res, status, err, context = '') {
+  const msg = err && typeof err.message === 'string' ? err.message : String(err || '');
+  if (status >= 500) {
+    const requestId = crypto.randomUUID();
+    console.error(`[error] ${sanitizeForLog(context)} rid=${requestId}:`, err);
+    return res.status(status).json({
+      success: false,
+      error: 'Internal server error',
+      requestId,
+      timestamp: new Date().toISOString()
+    });
+  }
+  return res.status(status).json({
+    success: false,
+    error: sanitizeForLog(msg),
+    timestamp: new Date().toISOString()
+  });
 }
 
 // Security headers (helmet)
@@ -108,17 +135,15 @@ app.get('/', (req, res) => {
   res.json({
     service: 'OSIA UIN Generator API',
     version: '2.1.0',
-    description: 'Generate OSIA-compliant Unique Identification Numbers with MRZ and hashing support',
+    description: 'Generate OSIA-compliant Unique Identification Numbers and unlinkable sector tokens. No PII.',
     endpoints: {
       health: 'GET /health',
       generate: 'POST /generate',
       validate: 'POST /validate',
       modes: 'GET /modes',
       sectors: 'GET /sectors',
-      countries: 'GET /countries',
-      documentTypes: 'GET /document-types',
-      hash: 'POST /hash',
-      hashVerify: 'POST /hash/verify',
+      hashUin: 'POST /hash/uin',
+      hashUinVerify: 'POST /hash/uin/verify',
       batch: 'POST /batch',
       poolStats: 'GET /pool/stats',
       poolPeek: 'GET /pool/peek',
@@ -164,12 +189,6 @@ app.get('/modes', (req, res) => {
         description: 'Sector-specific token derived from foundational UIN',
         parameters: ['foundationalUin', 'sector', 'tokenLength', 'charset', 'algorithm']
       },
-      {
-        name: 'mrz',
-        description: 'ICAO 9303 Machine Readable Zone for passports and ID cards',
-        parameters: ['format', 'documentType', 'issuingCountry', 'documentNumber', 'birthDate', 'sex', 'expiryDate', 'nationality', 'surname', 'givenNames'],
-        formats: ['TD1 (ID Card - 3x30)', 'TD2 (Travel Doc - 2x36)', 'TD3 (Passport - 2x44)']
-      }
     ]
   });
 });
@@ -182,125 +201,43 @@ app.get('/sectors', (req, res) => {
   });
 });
 
-app.get('/countries', (req, res) => {
-  const { search, limit = 50 } = req.query;
-
-  let countries = Object.entries(COUNTRY_CODES).map(([code, name]) => ({ code, name }));
-
-  if (search) {
-    const searchLower = search.toLowerCase();
-    countries = countries.filter(c =>
-      c.code.toLowerCase().includes(searchLower) ||
-      c.name.toLowerCase().includes(searchLower)
-    );
-  }
-
-  const limitNum = Math.min(parseInt(limit) || 50, 300);
-  countries = countries.slice(0, limitNum);
-
-  res.json({ count: countries.length, total: Object.keys(COUNTRY_CODES).length, countries });
-});
-
-app.get('/document-types', (req, res) => {
-  const types = Object.entries(DOCUMENT_TYPES).map(([code, description]) => ({ code, description }));
-  res.json({ count: types.length, types });
-});
-
 // ═══════════════════════════════════════════════
-// Hash Endpoints
+// Hash Endpoints (UIN hash only — no arbitrary-data hashing)
 // ═══════════════════════════════════════════════
 
-app.post('/hash', generateLimiter, async (req, res) => {
+// Hash a UIN via RIPEMD160(SHA3-256(uin + salt)) — the canonical `hash_rmd160`
+// used by downstream OSIA sector services.
+app.post('/hash/uin', generateLimiter, async (req, res) => {
   try {
-    const { data, format = 'hex', length = 32, key, mode = 'simple', algorithm = 'blake3' } = req.body;
-
-    if (!data) {
-      return res.status(400).json({ error: 'Missing data', message: 'Request body must include "data" field' });
+    const { uin, salt = '' } = req.body || {};
+    if (!uin || typeof uin !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Request body must include a non-empty string "uin"',
+        timestamp: new Date().toISOString()
+      });
     }
-
-    const algo = String(algorithm).toLowerCase();
-    let result;
-    let effectiveLength = length;
-    let algorithmLabel = algo;
-
-    if (algo === 'blake3') {
-      if (mode === 'keyed' && key) {
-        const keyBuffer = Buffer.from(key, 'utf-8');
-        const normalizedKey = Buffer.alloc(32);
-        keyBuffer.copy(normalizedKey, 0, 0, Math.min(32, keyBuffer.length));
-        result = computeKeyedHash(data, normalizedKey, { format, length });
-      } else if (mode === 'multiple' && Array.isArray(data)) {
-        result = hashMultiple(data, { format, length });
-      } else {
-        result = computeHash(data, { format, length });
-      }
-    } else {
-      const supported = new Set(['sha3-256', 'sha3-512', 'ripemd160', 'rmd160']);
-      if (!supported.has(algo)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Unsupported algorithm. Use one of: blake3, sha3-256, sha3-512, ripemd160',
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (mode !== 'simple') {
-        return res.status(400).json({
-          success: false,
-          error: 'Only "simple" mode is supported for non-BLAKE3 algorithms',
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      const input = typeof data === 'string' ? Buffer.from(data, 'utf-8') : data;
-      const nodeAlgo = algo === 'rmd160' ? 'ripemd160' : algo;
-      const hasher = crypto.createHash(nodeAlgo);
-      hasher.update(input);
-      const buf = hasher.digest();
-
-      switch (nodeAlgo) {
-        case 'sha3-256': effectiveLength = 32; break;
-        case 'sha3-512': effectiveLength = 64; break;
-        case 'ripemd160': effectiveLength = 20; break;
-      }
-
-      const out =
-        format === 'hex' ? buf.toString('hex') :
-        format === 'base64' ? buf.toString('base64') :
-        format === 'base64url' ? buf.toString('base64url') :
-        undefined;
-
-      if (!out) {
-        return res.status(400).json({
-          success: false,
-          error: 'Unsupported output format. Use: hex, base64, or base64url',
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      result = out;
-      algorithmLabel = nodeAlgo;
-    }
-
-    res.json({ success: true, hash: result, algorithm: algorithmLabel, format, length: effectiveLength, mode, timestamp: new Date().toISOString() });
+    const hash = computeUinHash(uin, salt);
+    res.json({ success: true, hash, algorithm: 'ripemd160(sha3-256(uin||salt))', timestamp: new Date().toISOString() });
   } catch (error) {
-    console.error('Hash error:', error);
-    res.status(400).json({ success: false, error: 'Hash computation failed', timestamp: new Date().toISOString() });
+    sendError(res, 400, error, 'hash/uin');
   }
 });
 
-app.post('/hash/verify', async (req, res) => {
+app.post('/hash/uin/verify', async (req, res) => {
   try {
-    const { data, hash, length = 32 } = req.body;
-
-    if (!data) return res.status(400).json({ error: 'Missing data', message: 'Request body must include "data" field' });
-    if (!hash) return res.status(400).json({ error: 'Missing hash', message: 'Request body must include "hash" field' });
-
-    const valid = verifyHash(data, hash, { length });
+    const { uin, hash, salt = '' } = req.body || {};
+    if (!uin || !hash) {
+      return res.status(400).json({
+        success: false,
+        error: 'Request body must include "uin" and "hash"',
+        timestamp: new Date().toISOString()
+      });
+    }
+    const valid = verifyUinHash(uin, hash, salt);
     res.json({ success: true, valid, timestamp: new Date().toISOString() });
   } catch (error) {
-    console.error('Hash verification error:', error);
-    res.status(400).json({ success: false, error: 'Hash verification failed', timestamp: new Date().toISOString() });
+    sendError(res, 400, error, 'hash/uin/verify');
   }
 });
 
@@ -316,10 +253,41 @@ app.post('/generate', generateLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid request body', message: 'Request body must be a JSON object with generation options' });
     }
 
-    const validModes = ['random', 'structured', 'sector_token', 'foundational', 'pii_structured', 'sectoral', 'mrz', 'passport', 'td1', 'td2', 'td3'];
+    // PII-accepting modes (mrz, passport, td1/2/3, pii_structured) removed
+    // per the no-PII invariant. MRZ generation belongs in downstream services
+    // that are authorised to handle PII.
+    const validModes = ['random', 'structured', 'sector_token', 'foundational', 'sectoral'];
     if (options.mode && !validModes.includes(options.mode.toLowerCase())) {
       return res.status(400).json({ error: 'Invalid mode', message: `Mode must be one of: ${validModes.join(', ')}` });
     }
+
+    // Pre-fetch entropy through the HSM priority chain (remote Utimaco TRNG
+    // -> local HSM -> CSPRNG). Inject the bytes + provenance into the
+    // synchronous generator via uinGenerator.provideRandomBytes(). If
+    // HSM_REQUIRE_HARDWARE=true and no hardware is available,
+    // cryptoRandomBytesWithSource does NOT throw — it returns CSPRNG
+    // metadata and the HsmClient.randomBytes downstream throws; here we
+    // replicate the fail-loud semantics explicitly at the server layer
+    // so /generate itself returns 503 rather than a generic 500.
+    const length = Number(options.length) || 19;
+    const entropy = await cryptoRandomBytesWithSource(Math.max(length * 2, 16));
+    const requireHardware =
+      process.env.HSM_REQUIRE_HARDWARE === 'true' ||
+      process.env.HSM_REQUIRE_HARDWARE === '1';
+    if (requireHardware && !entropy.hardware) {
+      return res.status(503).json({
+        success: false,
+        error: 'HSM_REQUIRE_HARDWARE=true but no hardware TRNG is available. Refusing to issue a UIN from software CSPRNG.',
+        source: entropy.source,
+        timestamp: new Date().toISOString()
+      });
+    }
+    provideRandomBytes(entropy.bytes, {
+      source: entropy.source,
+      hardware: entropy.hardware,
+      fipsLevel: entropy.fipsLevel || 0,
+      provider: entropy.hardware ? (entropy.provider || 'hsm') : null
+    });
 
     const result = generateUin(options);
     res.json({ success: true, result, timestamp: new Date().toISOString() });
@@ -351,8 +319,27 @@ app.post('/batch', generateLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid count', message: 'Count must be between 1 and 1000' });
     }
 
+    const requireHardware =
+      process.env.HSM_REQUIRE_HARDWARE === 'true' ||
+      process.env.HSM_REQUIRE_HARDWARE === '1';
+    const length = Number(options.length) || 19;
     const results = [];
     for (let i = 0; i < count; i++) {
+      const entropy = await cryptoRandomBytesWithSource(Math.max(length * 2, 16));
+      if (requireHardware && !entropy.hardware) {
+        return res.status(503).json({
+          success: false,
+          error: 'HSM_REQUIRE_HARDWARE=true but no hardware TRNG is available.',
+          source: entropy.source,
+          timestamp: new Date().toISOString()
+        });
+      }
+      provideRandomBytes(entropy.bytes, {
+        source: entropy.source,
+        hardware: entropy.hardware,
+        fipsLevel: entropy.fipsLevel || 0,
+        provider: entropy.hardware ? (entropy.provider || 'hsm') : null
+      });
       results.push(generateUin(options));
     }
 
@@ -374,7 +361,7 @@ app.get('/pool/stats', async (req, res) => {
     res.json({ success: true, stats, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Pool stats error:', error);
-    res.status(500).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 500, error);
   }
 });
 
@@ -393,7 +380,7 @@ app.get('/pool/peek', async (req, res) => {
     res.json({ success: true, uins, count: uins.length, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Pool peek error:', error);
-    res.status(500).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 500, error);
   }
 });
 
@@ -409,7 +396,7 @@ app.post('/pool/preassign', async (req, res) => {
     res.json({ success: true, uin: result.uin, status: result.status, result, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Pool preassign error:', error);
-    res.status(500).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 500, error);
   }
 });
 
@@ -428,7 +415,7 @@ app.post('/pool/assign', async (req, res) => {
     res.json({ success: true, uin: result.uin, status: result.status, result, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Pool assign error:', error);
-    res.status(400).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 400, error);
   }
 });
 
@@ -448,7 +435,7 @@ app.post('/pool/revoke', async (req, res) => {
     res.json({ success: true, uin: result.uin, status: result.status, result, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Pool revoke error:', error);
-    res.status(400).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 400, error);
   }
 });
 
@@ -468,7 +455,7 @@ app.post('/pool/retire', async (req, res) => {
     res.json({ success: true, uin: result.uin, status: result.status, result, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Pool retire error:', error);
-    res.status(400).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 400, error);
   }
 });
 
@@ -491,7 +478,7 @@ app.post('/uin/pre-generate', generateLimiter, async (req, res) => {
     res.json({ success: true, result, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Pre-generate error:', error);
-    res.status(400).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 400, error);
   }
 });
 
@@ -506,7 +493,7 @@ app.get('/uin/:uin', async (req, res) => {
     res.json({ success: true, uin: uinRecord, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('UIN lookup error:', error);
-    res.status(500).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 500, error);
   }
 });
 
@@ -516,7 +503,7 @@ app.get('/uin/:uin/audit', async (req, res) => {
     res.json({ success: true, audit, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('UIN audit error:', error);
-    res.status(500).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 500, error);
   }
 });
 
@@ -530,7 +517,7 @@ app.get('/formats', async (req, res) => {
     res.json({ success: true, formats, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Formats list error:', error);
-    res.status(500).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 500, error);
   }
 });
 
@@ -545,7 +532,7 @@ app.get('/formats/:id', async (req, res) => {
     res.json({ success: true, format, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Format get error:', error);
-    res.status(500).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 500, error);
   }
 });
 
@@ -555,7 +542,7 @@ app.post('/formats', async (req, res) => {
     res.status(201).json({ success: true, format, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Format create error:', error);
-    res.status(400).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 400, error);
   }
 });
 
@@ -570,7 +557,7 @@ app.put('/formats/:id', async (req, res) => {
     res.json({ success: true, format, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Format update error:', error);
-    res.status(400).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 400, error);
   }
 });
 
@@ -585,7 +572,7 @@ app.delete('/formats/:id', async (req, res) => {
     res.json({ success: true, deleted: true, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Format delete error:', error);
-    res.status(400).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 400, error);
   }
 });
 
@@ -599,7 +586,7 @@ app.post('/formats/preview', async (req, res) => {
     res.json({ success: true, raw: uin, formatted, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Format preview error:', error);
-    res.status(400).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 400, error);
   }
 });
 
@@ -613,7 +600,7 @@ app.get('/crypto/status', async (req, res) => {
     res.json({ success: true, status, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Crypto status error:', error);
-    res.status(500).json({ success: false, error: error.message, timestamp: new Date().toISOString() });
+    sendError(res, 500, error);
   }
 });
 
@@ -673,10 +660,11 @@ Server running at: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}
 Core endpoints:
   - GET  /               API information
   - GET  /health         Health check
-  - POST /generate       Generate a UIN (incl. MRZ)
+  - POST /generate       Generate a UIN
   - POST /validate       Validate a UIN
   - POST /batch          Batch generate UINs
-  - POST /hash           Compute hash
+  - POST /hash/uin       Hash a UIN (RIPEMD160 over SHA3-256)
+  - POST /hash/uin/verify  Verify a UIN hash
 
 Pool management:
   - GET  /pool/stats     Pool statistics

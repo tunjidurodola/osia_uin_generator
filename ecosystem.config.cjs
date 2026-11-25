@@ -69,7 +69,11 @@ module.exports = {
 
         // Server configuration
         PORT: 19020,
-        HOST: '0.0.0.0',
+        // Dev binds to loopback only. Exposing plaintext HTTP on a LAN
+        // interface leaks HSM-minted UINs + sector tokens. For LAN access
+        // during a demo, front the service with a TLS-terminating reverse
+        // proxy (e.g. nginx).
+        HOST: '127.0.0.1',
 
         // TLS - required for Vault self-signed cert (must be set at fork spawn)
         NODE_EXTRA_CA_CERTS: '/etc/ssl/certs/vault-ca.crt',
@@ -102,7 +106,7 @@ module.exports = {
         LOG_LEVEL: 'info',
 
         // Database configuration
-        DB_HOST: '172.27.104.111',
+        DB_HOST: 'db.pocket.one',
         DB_PORT: '5432',
         DB_USER: 'postgres',
         DB_PASSWORD: '',
@@ -123,9 +127,9 @@ module.exports = {
         // env fallback only used if Vault is unavailable
         TRNG_PIN: '',
 
-        // Vault configuration (nv2 Vault via ZeroTier)
+        // Vault configuration (nv1 Vault via ZeroTier)
         VAULT_ENABLED: 'true',
-        VAULT_ADDR: 'https://172.27.170.210:8200',
+        VAULT_ADDR: 'https://nv1.pocket.one:8200',
         VAULT_SKIP_VERIFY: '1',
         VAULT_TOKEN: VAULT_TOKEN,
       },
@@ -162,7 +166,7 @@ module.exports = {
 
         // Vault
         VAULT_ENABLED: 'true',
-        VAULT_ADDR: 'https://172.27.170.210:8200',
+        VAULT_ADDR: 'https://nv1.pocket.one:8200',
         VAULT_SKIP_VERIFY: '1',
         VAULT_TOKEN: VAULT_TOKEN,
 

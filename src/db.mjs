@@ -5,6 +5,29 @@
 
 import knex from 'knex';
 import { getConfig } from './config.mjs';
+import fs from 'fs';
+
+/**
+ * Build a pg SSL option from environment. DigitalOcean Managed PG requires
+ * TLS (sslmode=require). When NODE_EXTRA_CA_CERTS points at the DO CA we
+ * verify the chain; otherwise we still encrypt but skip CA verification.
+ */
+function buildSsl() {
+  const mode = (process.env.PGSSLMODE || '').toLowerCase();
+  if (!mode || mode === 'disable') return undefined;
+  const caPath = process.env.NODE_EXTRA_CA_CERTS;
+  if (caPath) {
+    try {
+      const ca = fs.readFileSync(caPath, 'utf8');
+      return { ca, rejectUnauthorized: true };
+    } catch (e) {
+      console.warn('[DB] Could not read CA at', caPath, '-', e.message);
+    }
+  }
+  // Encrypt without CA verification (sslmode=require semantics)
+  return { rejectUnauthorized: false };
+}
+
 
 let dbInstance = null;
 
@@ -27,6 +50,7 @@ export function getDb() {
       user: config.db.user,
       password: config.db.password,
       database: config.db.name,
+      ssl: buildSsl(),
     },
     searchPath: ['public'],
     pool: {

@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/uinGenerator.mjs",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.20.0 <21"
   },
   "scripts": {
     "test": "node src/test.mjs",
@@ -26,8 +26,14 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
     "graphene-pk11": "^2.3.6",
+    "helmet": "^8.1.0",
     "knex": "^3.1.0",
     "pg": "^8.11.3"
+  },
+  "overrides": {
+    "lodash": "^4.17.24",
+    "path-to-regexp": "^0.1.13"
   }
 }

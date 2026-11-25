@@ -975,10 +975,10 @@ pm2 start ecosystem.config.cjs`}</pre>
 
                 <h4>{t('docs.api.requestBody')}</h4>
                 <pre className="code-block">{`{
-  "firstName": "John",
-  "lastName": "Doe",
-  "dateOfBirth": "1990-01-15"
+  "transactionId": "opaque-correlator-abc123",
+  "mode": "foundational"
 }`}</pre>
+                <p><em>Note: the UIN Generator accepts no PII. Person attributes must not be submitted — the service derives a high-entropy identifier with no embedded personal data.</em></p>
 
                 <h4>{t('docs.api.response')}</h4>
                 <pre className="code-block">{`"ABCD1234EFGH5678XYZ"`}</pre>

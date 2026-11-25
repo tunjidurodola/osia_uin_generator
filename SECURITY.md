@@ -1,5 +1,10 @@
 # Security Policy
 
+## Threat model
+
+- **No PII by construction.** The UIN Generator must not accept, store, log, derive from, or display Personally Identifiable Information. Any input surface, stored field, log line, or fixture that touches PII is treated as a security defect, regardless of severity rating. MRZ/passport/TD1–TD3 generation modes have been removed because they are inherently PII-accepting.
+- **Hardware-rooted randomness.** HSM integration is legitimacy-critical. Silent fallback from HSM to software CSPRNG is treated as fail-open and is not acceptable. Set `HSM_REQUIRE_HARDWARE=true` in production to refuse any request that cannot be served from hardware entropy. The `/crypto/status` endpoint always surfaces the last-used source.
+
 ## Supported Versions
 
 | Version | Supported          |

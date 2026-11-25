@@ -111,8 +111,15 @@ export async function initializeCryptoService(config = {}) {
  * @returns {object} Current status
  */
 export function getStatus() {
+  const requireHardware = Boolean(
+    process.env.HSM_REQUIRE_HARDWARE === 'true' ||
+    process.env.HSM_REQUIRE_HARDWARE === '1' ||
+    (hsmClient && hsmClient.config && hsmClient.config.requireHardware === true)
+  );
   return {
     initialized,
+    requireHardware,
+    lastProvenance: getProvenance(),
     hsm: hsmClient ? hsmClient.getStatus() : { enabled: false, mode: 'software' },
     vault: vaultClient ? {
       enabled: isVaultEnabled(),
@@ -198,6 +205,11 @@ export async function hmac(algorithm, key, data) {
  * @returns {Promise<Buffer>} Random bytes
  */
 export async function randomBytes(length) {
+  const requireHardware =
+    process.env.HSM_REQUIRE_HARDWARE === 'true' ||
+    process.env.HSM_REQUIRE_HARDWARE === '1' ||
+    (hsmClient && hsmClient.config && hsmClient.config.requireHardware === true);
+
   // Priority: Use HSM hardware TRNG when available
   if (hsmClient && hsmClient.initialized && (hsmClient.remoteTrngAvailable || hsmClient.trngAvailable)) {
     try {
@@ -213,11 +225,28 @@ export async function randomBytes(length) {
       });
       return bytes;
     } catch (error) {
+      // hsmClient.randomBytes already throws when requireHardware=true;
+      // rethrow so callers see a clear error instead of silently degrading.
+      if (requireHardware) {
+        throw error;
+      }
       console.warn('[CryptoService] HSM TRNG failed, using software CSPRNG:', error.message);
     }
   }
 
-  // Fallback to Node.js CSPRNG
+  // No hardware path at all — refuse if hardware is required.
+  if (requireHardware) {
+    throw new Error(
+      'HSM_REQUIRE_HARDWARE=true but no hardware TRNG is available at the crypto service layer. ' +
+      'Refusing to issue UINs or tokens with software-only entropy.'
+    );
+  }
+
+  // Fallback to Node.js CSPRNG (observable — not silent)
+  console.warn(
+    '[CryptoService] WARNING: serving random bytes from software CSPRNG. ' +
+    'Set HSM_REQUIRE_HARDWARE=true to enforce hardware-only randomness.'
+  );
   setProvenance({
     source: 'Node.js CSPRNG',
     hardware: false,

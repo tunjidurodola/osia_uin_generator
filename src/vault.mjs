@@ -58,8 +58,18 @@ export class VaultClient {
       timeout: this.config.timeout
     };
 
-    // Skip TLS verification if VAULT_SKIP_VERIFY is set (matches Vault CLI convention)
+    // Skip TLS verification if VAULT_SKIP_VERIFY is set (matches Vault CLI convention).
+    // Refuse to honour this in production — TLS-skip against Vault exposes sector
+    // secrets + HSM credentials to any MITM on the path.
     if (isHttps && (process.env.VAULT_SKIP_VERIFY === '1' || process.env.VAULT_SKIP_VERIFY === 'true')) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'VAULT_SKIP_VERIFY is set but NODE_ENV=production. Refusing to disable TLS ' +
+          'verification against Vault in production — this would expose sector secrets ' +
+          'and HSM credentials to MITM. Unset VAULT_SKIP_VERIFY or fix the Vault CA trust chain.'
+        );
+      }
+      console.warn('[Vault] WARNING: TLS verification disabled (VAULT_SKIP_VERIFY)');
       options.rejectUnauthorized = false;
     }
 
@@ -133,6 +143,7 @@ export class VaultClient {
       this.authenticated = true;
 
       console.log('[Vault] AppRole authentication successful');
+      this.startAutoRenew();
       return true;
     } catch (error) {
       console.error('[Vault] AppRole authentication failed:', error.message);
@@ -148,10 +159,47 @@ export class VaultClient {
     if (!this.token || !this.authenticated) {
       return false;
     }
-    if (this.tokenExpiry && Date.now() > this.tokenExpiry - 60000) {
-      return false; // Token expires within 1 minute
+    // 5-minute buffer — wider than 60 s avoids race conditions near boundary.
+    if (this.tokenExpiry && Date.now() > this.tokenExpiry - 300000) {
+      return false;
     }
     return true;
+  }
+
+  /**
+   * Start an automatic renewal timer that renews the token at ~80 %
+   * of its lease duration. Idempotent: calling twice is a no-op.
+   * Call stopAutoRenew() to clear.
+   */
+  startAutoRenew() {
+    if (this._renewTimer) return;
+    if (!this.tokenExpiry) return;
+    const leaseMs = this.tokenExpiry - Date.now();
+    if (leaseMs <= 0) return;
+    const renewAt = Math.max(30000, Math.floor(leaseMs * 0.8));
+    this._renewTimer = setTimeout(async () => {
+      try {
+        const ok = await this.renewToken();
+        if (!ok) {
+          console.error('[Vault] Auto-renew failed; token will expire without renewal');
+          this.authenticated = false;
+        } else {
+          this._renewTimer = null;
+          this.startAutoRenew();
+        }
+      } catch (e) {
+        console.error('[Vault] Auto-renew error:', e.message);
+        this.authenticated = false;
+      }
+    }, renewAt);
+    if (this._renewTimer.unref) this._renewTimer.unref();
+  }
+
+  stopAutoRenew() {
+    if (this._renewTimer) {
+      clearTimeout(this._renewTimer);
+      this._renewTimer = null;
+    }
   }
 
   /**
@@ -167,6 +215,8 @@ export class VaultClient {
       const response = await this.request('POST', '/v1/auth/token/renew-self');
       this.tokenExpiry = Date.now() + (response.auth.lease_duration * 1000);
       console.log('[Vault] Token renewed successfully');
+      this._renewTimer = null;
+      this.startAutoRenew();
       return true;
     } catch (error) {
       console.error('[Vault] Token renewal failed:', error.message);

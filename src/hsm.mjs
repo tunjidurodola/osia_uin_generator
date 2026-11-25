@@ -23,7 +23,7 @@
  */
 
 import crypto from 'crypto';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 
 /**
  * HSM provider configurations with priority order
@@ -173,6 +173,10 @@ const DEFAULT_CONFIG = {
   pin: process.env.HSM_PIN || '',
   keyLabel: process.env.HSM_KEY_LABEL || 'osia-sector-key',
   enabled: process.env.HSM_ENABLED === 'true',
+  requireHardware:
+    process.env.HSM_REQUIRE_HARDWARE === 'true' ||
+    process.env.HSM_REQUIRE_HARDWARE === '1',
+  yubihsmAuthKeyId: process.env.YUBIHSM_AUTHKEY_ID || '0001',
   preferHardwareTrng: true // Always prefer hardware TRNG when available
 };
 
@@ -205,6 +209,8 @@ export class HsmClient {
       slot: String(config.slot ?? (process.env.TRNG_SLOT || '5')),
       pin: config.pin ?? (process.env.TRNG_PIN || ''),
       command: config.command ?? 'pkcs11-tool-remote',
+      sshHost: config.sshHost ?? (process.env.HSM_SSH_HOST || '172.27.127.129'),
+      sshModule: config.sshModule ?? (process.env.HSM_SSH_MODULE || '/usr/local/lib/libcs_pkcs11_R3.so'),
       timeout: config.timeout ?? 10000,
     };
   }
@@ -224,7 +230,7 @@ export class HsmClient {
       const testBytes = this._remoteRandomBytesSync(16);
       if (testBytes && testBytes.length === 16) {
         this.remoteTrngAvailable = true;
-        console.log('[HSM] Remote TRNG verified via Utimaco CryptoServer c3 (pkcs11-tool-remote)');
+        console.log('[HSM] Remote TRNG verified via Utimaco CryptoServer c3 (direct SSH, stdin PIN)');
         console.log(`[HSM] TRNG slot: ${this.trngConfig.slot}, FIPS 140-2 Level 3`);
         return true;
       }
@@ -238,20 +244,47 @@ export class HsmClient {
   }
 
   /**
-   * Generate random bytes from remote Utimaco TRNG via SSH
+   * Generate random bytes from remote Utimaco TRNG via SSH.
+   *
+   * PIN is passed via stdin and read into an env var on the remote host,
+   * then fed to pkcs11-tool through --pin env:PKCS11_PIN. This keeps the
+   * PIN out of argv on both the local and remote process tables.
+   *
    * @param {number} length - Number of bytes
+   * @param {Function} [spawnFn=spawnSync] - injectable for tests
    * @returns {Buffer} Random bytes from hardware TRNG
    */
-  _remoteRandomBytesSync(length) {
-    return execFileSync(this.trngConfig.command, [
-      '--generate-random', String(length),
-      '--slot', this.trngConfig.slot,
-      '--login', '--pin', this.trngConfig.pin
-    ], {
+  _remoteRandomBytesSync(length, spawnFn = spawnSync) {
+    const slot = String(Number(this.trngConfig.slot));
+    if (!/^[0-9]+$/.test(slot)) {
+      throw new Error(`Invalid TRNG slot: ${this.trngConfig.slot}`);
+    }
+    const host = this.trngConfig.sshHost;
+    if (!/^[\w.\-]+$/.test(host)) {
+      throw new Error(`Invalid HSM_SSH_HOST: ${host}`);
+    }
+    const mod = this.trngConfig.sshModule;
+    if (!/^[/\w.\-]+$/.test(mod)) {
+      throw new Error(`Invalid HSM_SSH_MODULE: ${mod}`);
+    }
+    const n = String(Number(length));
+    if (!/^[0-9]+$/.test(n)) {
+      throw new Error(`Invalid length: ${length}`);
+    }
+    const remoteCmd =
+      `PKCS11_PIN_STDIN=$(cat); export PKCS11_PIN="$PKCS11_PIN_STDIN"; ` +
+      `pkcs11-tool --module ${mod} --generate-random ${n} --slot ${slot} --login --pin env:PKCS11_PIN`;
+    const r = spawnFn('ssh', ['-q', host, remoteCmd], {
+      input: this.trngConfig.pin,
       maxBuffer: 1024 * 1024,
       timeout: this.trngConfig.timeout,
       stdio: ['pipe', 'pipe', 'pipe']
     });
+    if (r.status !== 0) {
+      const err = r.stderr ? r.stderr.toString().trim() : '(no stderr)';
+      throw new Error(`Remote TRNG failed (exit ${r.status}): ${err}`);
+    }
+    return r.stdout;
   }
 
   /**
@@ -337,8 +370,12 @@ export class HsmClient {
       return true;
     }
 
+    // Local HSM init and remote TRNG init are independent — a failure in
+    // one must not swallow the other. Most commonly: the local PKCS#11
+    // library loads but no local HSM device is attached, which throws
+    // during session open; we still want to attempt the remote Utimaco c3
+    // TRNG path.
     try {
-      // Auto-detect HSM if provider is 'auto'
       let libraryPath = this.config.library;
       let providerName = this.config.provider;
 
@@ -355,17 +392,14 @@ export class HsmClient {
         this.detectedProvider = this.config.provider;
       }
 
-      // Try to load graphene-pk11 for PKCS#11 support
       const graphene = await this.loadPkcs11Module();
 
       if (graphene && libraryPath) {
         await this.initializePkcs11(graphene, libraryPath);
 
-        // Check if hardware TRNG is available - requires session and provider that has TRNG
         this.trngAvailable = this.providerInfo?.hasTrng === true && this.session !== null;
 
         if (this.trngAvailable) {
-          // Test TRNG by generating a few bytes
           try {
             this.session.generateRandom(16);
             console.log(`[HSM] Hardware TRNG verified via ${this.providerInfo.name}`);
@@ -379,22 +413,25 @@ export class HsmClient {
           console.warn('[HSM] WARNING: SoftHSM detected - NO hardware TRNG, using software PRNG');
         }
       } else {
-        console.log('[HSM] PKCS#11 module not available, using software CSPRNG');
+        console.log('[HSM] PKCS#11 module not available, will rely on remote TRNG or CSPRNG');
       }
-
-      // Initialize remote TRNG (Utimaco c3) if configured
-      if (this.trngConfig) {
-        await this.initializeRemoteTrng();
-      }
-
-      this.initialized = true;
-      return true;
     } catch (error) {
-      console.error('[HSM] Initialization failed:', error.message);
-      console.log('[HSM] Falling back to software CSPRNG');
-      this.initialized = true;
-      return true;
+      console.warn('[HSM] Local HSM initialization failed:', error.message);
+      console.warn('[HSM] Continuing — remote TRNG / software path still available.');
+      // Do NOT set this.initialized yet — remote TRNG still pending below.
     }
+
+    // Remote TRNG init runs regardless of whether the local HSM succeeded.
+    if (this.trngConfig) {
+      try {
+        await this.initializeRemoteTrng();
+      } catch (error) {
+        console.warn('[HSM] Remote TRNG initialization failed:', error.message);
+      }
+    }
+
+    this.initialized = true;
+    return true;
   }
 
   /**
@@ -474,9 +511,14 @@ export class HsmClient {
         const isYubiHsmFormat = /^[0-9a-fA-F]{4}/.test(pin) && pin.length >= 8;
 
         if (this.detectedProvider === 'yubihsm' && !isYubiHsmFormat) {
-          // For YubiHSM, prepend default authkey 0001 (authkey ID 1)
-          pin = '0001' + pin;
-          console.log('[HSM] YubiHSM: Using formatted PIN (0001 + password)');
+          // For YubiHSM, prepend the configured authkey ID (default: 0001).
+          // Override with YUBIHSM_AUTHKEY_ID env var for non-default deployments.
+          const authKeyId = this.config.yubihsmAuthKeyId;
+          if (!/^[0-9a-fA-F]{4}$/.test(authKeyId)) {
+            throw new Error(`Invalid YubiHSM authkey ID: "${authKeyId}" (must be 4 hex chars)`);
+          }
+          pin = authKeyId + pin;
+          console.log(`[HSM] YubiHSM: Using formatted PIN (${authKeyId} + password)`);
         }
 
         console.log(`[HSM] Attempting login (PIN length: ${pin.length})...`);
@@ -484,7 +526,7 @@ export class HsmClient {
         console.log('[HSM] Login successful');
       } catch (loginError) {
         console.warn('[HSM] Login failed:', loginError.message);
-        console.warn('[HSM] Note: YubiHSM requires PIN format: 0001<password> (min 8 chars total)');
+        console.warn(`[HSM] Note: YubiHSM requires PIN format: ${this.config.yubihsmAuthKeyId}<password> (min 8 chars total)`);
         // Continue without login - some operations may still work
       }
     } else {
@@ -578,11 +620,23 @@ export class HsmClient {
         }
         return randomData;
       } catch (error) {
-        console.warn('[HSM] Hardware TRNG failed, falling back to software CSPRNG:', error.message);
+        console.warn('[HSM] Hardware TRNG failed:', error.message);
       }
     }
 
     // Priority 3: Software CSPRNG (Node.js crypto.randomBytes)
+    // Refuse if HSM_REQUIRE_HARDWARE=true — no silent degradation.
+    if (this.config.requireHardware) {
+      throw new Error(
+        'HSM_REQUIRE_HARDWARE=true but no hardware TRNG is available. ' +
+        'Refusing to fall back to software CSPRNG. ' +
+        'Check HSM session, remote TRNG (Utimaco c3), and local HSM attachment.'
+      );
+    }
+    console.warn(
+      '[HSM] WARNING: serving request from software CSPRNG — no hardware TRNG available. ' +
+      'Set HSM_REQUIRE_HARDWARE=true to enforce hardware-only randomness.'
+    );
     return crypto.randomBytes(length);
   }
 
@@ -694,10 +748,16 @@ export class HsmClient {
    * @returns {Promise<Buffer>} Signature
    */
   async sign(algorithm, data, key) {
+    // The HSM provisions an AES symmetric key in findOrCreateKey() and the
+    // mechanism map in getMechanism() covers only HMAC-SHA{256,384,512}.
+    // The software fallback must therefore also produce an HMAC — not call
+    // crypto.createSign which expects asymmetric RSA/ECDSA algorithm names
+    // and fails or silently produces a non-verifiable signature for
+    // symmetric keys. Callers that want asymmetric signatures should
+    // either provision an asymmetric key in the HSM directly or call
+    // crypto.createSign() themselves with a PEM key.
     if (!this.pkcs11 || !this.keyHandle) {
-      const sign = crypto.createSign(algorithm);
-      sign.update(data);
-      return sign.sign(key);
+      return this.softwareHmac(algorithm, key, data);
     }
 
     try {
@@ -705,10 +765,8 @@ export class HsmClient {
       const mechanism = this.getMechanism(algorithm, graphene);
       return this.session.createSign(mechanism, this.keyHandle).once(data);
     } catch (error) {
-      console.warn('[HSM] Sign failed, falling back to software:', error.message);
-      const sign = crypto.createSign(algorithm);
-      sign.update(data);
-      return sign.sign(key);
+      console.warn('[HSM] Sign failed, falling back to software HMAC:', error.message);
+      return this.softwareHmac(algorithm, key, data);
     }
   }
 
@@ -735,7 +793,10 @@ export class HsmClient {
       fipsLevel: this.remoteTrngAvailable ? 3 : (this.providerInfo?.fipsLevel || 0),
       slot: this.config.slot,
       keyLabel: this.config.keyLabel,
-      mode: this.pkcs11 ? 'hardware' : 'software',
+      requireHardware: this.config.requireHardware === true,
+      mode: this.pkcs11 || this.remoteTrngAvailable
+        ? 'hardware'
+        : (this.config.requireHardware ? 'hardware-required-unavailable' : 'software-fallback'),
       randomSource: this.remoteTrngAvailable
         ? 'Utimaco CryptoServer Hardware TRNG (c3)'
         : this.trngAvailable

@@ -10,13 +10,33 @@ import { deriveSectorToken } from './sectorToken.mjs';
 import { getConfig, parseCharset, excludeAmbiguous } from './config.mjs';
 import { computeUinHash } from './hash.mjs';
 
-// Provenance tracking - will be set by async generator
+// Provenance tracking — set per-call when the caller pre-fetched HSM bytes
+// via provideRandomBytes(). Default reflects an unprovisioned software path.
 let lastProvenance = {
   source: 'Node.js CSPRNG',
   hardware: false,
   fipsLevel: 0,
   provider: null
 };
+
+// Single-shot buffer of pre-fetched entropy. The server pre-fetches from
+// cryptoService.randomBytesWithSource() (which walks the HSM priority chain)
+// and stashes the bytes + provenance here before calling generateUin().
+// generateRandomString() consumes from this buffer first; if exhausted or
+// absent it falls through to crypto.randomBytes (software CSPRNG).
+// See F-28 in the findings ledger for why this plumbing exists.
+let _injectedBytes = null;
+
+/**
+ * Provide pre-fetched entropy + its provenance for the next sync generate call.
+ * Single-shot: the buffer is cleared once consumed.
+ * @param {Buffer} bytes - Random bytes pre-fetched from cryptoService
+ * @param {object} provenance - {source, hardware, fipsLevel, provider}
+ */
+export function provideRandomBytes(bytes, provenance) {
+  _injectedBytes = Buffer.isBuffer(bytes) ? bytes : null;
+  if (provenance) lastProvenance = { ...provenance };
+}
 
 /**
  * Get current provenance info
@@ -27,7 +47,7 @@ export function getProvenance() {
 }
 
 /**
- * Set provenance info (called by cryptoService when using HSM)
+ * Set provenance info directly (mainly for tests).
  * @param {object} provenance - Provenance data
  */
 export function setProvenance(provenance) {
@@ -51,7 +71,28 @@ function generateRandomString(length, charset, providedBytes = null) {
   }
 
   const charsetLength = charset.length;
-  const randomBytes = providedBytes || crypto.randomBytes(length * 2);
+  // Priority order for this sync call:
+  //  1. Explicit providedBytes arg (call-site override — used by structured templates)
+  //  2. Injected buffer pre-fetched via provideRandomBytes() — routed through
+  //     cryptoService -> HsmClient (remote Utimaco TRNG / local HSM / CSPRNG).
+  //  3. Node crypto.randomBytes (software fallback).
+  let randomBytes;
+  if (providedBytes) {
+    randomBytes = providedBytes;
+  } else if (_injectedBytes && _injectedBytes.length >= length * 2) {
+    randomBytes = _injectedBytes;
+    _injectedBytes = null; // single-shot
+  } else {
+    // Clear any stale provenance — we're on software path for this call.
+    _injectedBytes = null;
+    lastProvenance = {
+      source: 'Node.js CSPRNG',
+      hardware: false,
+      fipsLevel: 0,
+      provider: null
+    };
+    randomBytes = crypto.randomBytes(length * 2);
+  }
 
   let result = '';
   let byteIndex = 0;
@@ -406,7 +447,6 @@ export function generateUin(options = {}) {
       return generateRandomUin(options);
 
     case 'structured':
-    case 'pii_structured':
       return generateStructuredUin(options);
 
     case 'foundational':
