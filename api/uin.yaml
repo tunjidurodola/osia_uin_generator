@@ -11,6 +11,14 @@ info:
     (pre-generation, claiming, assignment, release, retirement, and revocation),
     display format configuration, and cryptographic/HSM status reporting.
 
+    Conventions:
+
+    - Every operation requires the `transactionId` query parameter.
+    - Every error response body is an `Error` object (`code` equals the HTTP status).
+    - UINs never embed personal data: FOUNDATIONAL, RANDOM and SECTOR identifiers are
+      generated without subject attributes, and STRUCTURED patterns may only embed
+      non-personal administrative attributes.
+
     Change log:
 
     - 2.0.0:
@@ -18,6 +26,8 @@ info:
       - Added multi-mode generation (FOUNDATIONAL, RANDOM, STRUCTURED, SECTOR)
       - Added character set, checksum (ISO 7064, Luhn, Damm), formatting, and lifecycle claims
       - Added batch generation, pool lifecycle management, lookup/audit, format templates, and crypto status endpoints
+      - Error bodies on 401/403/404, 503 when hardware entropy is mandated but unavailable
+      - Display formats may declare explicit segment lengths
     - 1.2.0:
       - Add error structure on 400 errors
       - Force additionalProperties to false when extension is not allowed
@@ -170,6 +180,8 @@ paths:
       description: |
         Request the generation of a new UIN.
         The request body should contain a list of attributes and their value, formatted as a JSON dictionary.
+        The attributes are accepted for OSIA v1.2.0 compatibility only: the UIN is generated as a
+        FOUNDATIONAL identifier without them, and they are neither stored nor logged.
         **Legacy Service (OSIA v1.2.0 compatible)**
       operationId: generateUIN
       tags:
@@ -205,6 +217,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/UnexpectedError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /v1/generate:
     post:
@@ -241,11 +255,15 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/UnexpectedError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /v1/batch:
     post:
       summary: Generate batch of UINs
-      description: Generate multiple UINs in a single stateless request
+      description: |
+        Generate multiple UINs in a single stateless request.
+        SECTOR mode is not supported in batch (a sector token is derived from exactly one base UIN).
       operationId: generateBatch
       tags:
         - generate
@@ -275,6 +293,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/UnexpectedError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /v1/validate:
     post:
@@ -426,6 +446,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/UnexpectedError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /v1/uin/claim:
     post:
@@ -825,7 +847,9 @@ components:
       required: true
       schema:
         type: string
+        minLength: 1
         maxLength: 128
+        pattern: '^[^\u0000-\u001F\u007F]+$'
     UinPathParam:
       name: uin
       in: path
@@ -852,12 +876,30 @@ components:
             $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Client must be authenticated
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     Forbidden:
       description: Service or read operation forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     NotFound:
       description: Unknown record
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     UnexpectedError:
       description: Unexpected error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServiceUnavailable:
+      description: Hardware entropy is mandated by the deployment but no hardware TRNG is available
       content:
         application/json:
           schema:
@@ -873,8 +915,10 @@ components:
         code:
           type: integer
           format: int32
+          description: Error code (the HTTP status code)
         message:
           type: string
+          description: Human-readable error description
       additionalProperties: false
 
     Attributes:
@@ -911,7 +955,10 @@ components:
       enum: [NONE, ISO7064, ISO7064_MOD37_2, ISO7064_MOD97_10, LUHN, DAMM]
       default: ISO7064_MOD37_2
       description: |
-        Check-character algorithm appended to the identifier (ISO7064 aliases ISO7064_MOD37_2).
+        Check-character algorithm appended to the identifier (ISO7064 aliases ISO7064_MOD37_2):
+        - ISO7064_MOD37_2: one character from 0-9, A-Z, '*'
+        - ISO7064_MOD97_10: two digits (02-98)
+        - LUHN, DAMM: one digit; the identifier body must be NUMERIC
 
     OutputFormat:
       type: string
@@ -952,7 +999,7 @@ components:
         formatCode:
           type: string
           maxLength: 64
-          description: Optional reference to a registered format configuration
+          description: Registered format configuration to apply; takes precedence over the inline rules and implies enabled
       additionalProperties: false
 
     LifecycleClaims:
@@ -1032,7 +1079,9 @@ components:
           $ref: '#/components/schemas/ChecksumAlgorithm'
         supportsPiiAttributes:
           type: boolean
-          description: False for FOUNDATIONAL/RANDOM/SECTOR; true for STRUCTURED templates
+          description: |
+            True when the mode embeds caller-supplied personal attributes in the identifier.
+            Always false for FOUNDATIONAL, RANDOM and SECTOR.
         requiresBaseUin:
           type: boolean
           description: True only for SECTOR mode
@@ -1068,7 +1117,10 @@ components:
           $ref: '#/components/schemas/ModeName'
         length:
           type: integer
-          description: Expected canonical length of the generated UIN (excluding display separators)
+          description: |
+            Canonical length of the generated UIN including check character(s) and excluding
+            display separators. For STRUCTURED mode the length is defined by the pattern; when
+            supplied it must match.
           format: int32
           minimum: 4
           maximum: 128
@@ -1078,16 +1130,23 @@ components:
         excludeAmbiguous:
           type: boolean
           default: false
-          description: Exclude visually ambiguous characters (0, O, I, 1, l)
+          description: Exclude visually ambiguous characters (0, O, I, 1, l) from random segments
         checksum:
           $ref: '#/components/schemas/ChecksumAlgorithm'
         formatting:
           $ref: '#/components/schemas/FormattingOptions'
         pattern:
           type: string
-          description: Template or regular expression defining structure, charset, separator, and embedded elements for STRUCTURED mode
+          description: |
+            Regular expression defining the structure of a STRUCTURED identifier as a sequence of
+            literal characters and named groups:
+            - `random...` groups (`[class]{n}` or `\d{n}`) are filled with random characters
+            - a `checksum` group (`[class]{n}`) receives the check character(s), computed over the
+              values of the preceding named groups
+            - any other named group embeds the attribute of the same name, whose value must match
+              the group's expression
           maxLength: 256
-          example: "(?<dateOfBirth>[A-Za-z0-9]+)-(?<gender>[A-Z]{1})-(?<random>[0-9]{4})-(?<checksum>[0-9]{1})"
+          example: "(?<regionCode>[A-Z]{2})-(?<registrationYear>[0-9]{4})-(?<random>[0-9]{6})-(?<checksum>[0-9]{1})"
         sector:
           type: string
           maxLength: 32
@@ -1096,7 +1155,9 @@ components:
         baseUIN:
           type: string
           maxLength: 128
-          description: Foundational UIN from which to derive a sector token (required when mode is SECTOR; never logged or exposed externally)
+          description: |
+            Foundational UIN from which to derive a sector token (required when mode is SECTOR;
+            never logged or exposed externally). The same baseUIN and sector always yield the same token.
         issuer:
           type: string
           maxLength: 256
@@ -1119,12 +1180,13 @@ components:
           $ref: '#/components/schemas/OutputFormat'
         attributes:
           type: object
-          description: Business attributes needed for STRUCTURED UIN calculation (e.g. dateOfBirth, gender, birthPlace)
+          description: |
+            Non-personal administrative attributes embedded by a STRUCTURED pattern
+            (e.g. regionCode, registrationYear). Personal data must not be embedded in a UIN.
           additionalProperties: true
           example:
-            gender: M
-            dateOfBirth: "1984-11-19"
-            birthPlace: Paris
+            regionCode: NW
+            registrationYear: "2026"
       additionalProperties: false
 
     GenerateResponse:
@@ -1226,7 +1288,7 @@ components:
           description: True if syntax, checksum, and (if checked) registry lifecycle status are valid
         mode:
           type: string
-          description: Name of the mode used or inferred for validation
+          description: Name of the mode used or inferred for validation (UNSPECIFIED when unknown)
           maxLength: 32
         status:
           type: string
@@ -1378,7 +1440,9 @@ components:
           maxLength: 64
           default: "foundational"
         mode:
-          $ref: '#/components/schemas/ModeName'
+          allOf:
+            - $ref: '#/components/schemas/ModeName'
+          description: FOUNDATIONAL (default) or RANDOM; STRUCTURED and SECTOR identifiers are not pooled
         length:
           type: integer
           format: int32
@@ -1431,7 +1495,7 @@ components:
           type: integer
           format: int32
           minimum: 60
-          description: Reservation window before stale pre-assigned UINs can be reclaimed
+          description: Reservation window before the pre-assigned UIN can be released by cleanup (defaults to the cleanup olderThanSeconds)
       additionalProperties: false
 
     AssignRequest:
@@ -1565,6 +1629,18 @@ components:
           minimum: 1
           maximum: 32
           example: 4
+        segmentLengths:
+          type: array
+          description: |
+            Explicit group lengths (e.g. [5, 4, 4, 4, 2]); the last length repeats for longer UINs.
+            When present the first entry equals groupSize.
+          minItems: 1
+          maxItems: 16
+          items:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 32
         prefix:
           type: string
           maxLength: 16
@@ -1590,6 +1666,18 @@ components:
           format: int32
           minimum: 1
           maximum: 32
+        segmentLengths:
+          type: array
+          description: |
+            Explicit group lengths (e.g. [5, 4, 4, 4, 2]); the last length repeats for longer UINs.
+            When present the first entry equals groupSize.
+          minItems: 1
+          maxItems: 16
+          items:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 32
         prefix:
           type: string
           maxLength: 16
